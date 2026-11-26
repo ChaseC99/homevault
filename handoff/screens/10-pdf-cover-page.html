@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PDF report – cover page</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2E5E4E}a:hover{color:#1F4337}
+</style>
+</helmet>
+<div style="width: 612px; height: 792px; position: relative; box-sizing: border-box; background: #FFFFFF; font-family: Inter, system-ui, sans-serif; color: #1B1A17; padding: 40px 48px; display: flex; flex-direction: column; gap: 16px">
+  <header style="display: flex; justify-content: space-between; align-items: flex-end">
+    <div style="display: flex; flex-direction: column; gap: 3px">
+      <span style="font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #5F5B53">Personal property inventory</span>
+      <h1 style="margin: 0; font-family: 'Space Grotesk', Inter, sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em">Nguyen residence</h1>
+    </div>
+    <span style="font-size: 11px; color: #5F5B53">Generated Nov 25, 2026</span>
+  </header>
+
+  <div style="height: 190px; border-radius: 6px; background: #DCD6C9; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #5F5B53">Exterior photo</div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 28px; font-size: 11px; line-height: 1.5">
+    <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px solid #1B1A17; padding-top: 6px">
+      <span style="font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #5F5B53">Policyholder</span>
+      <span style="font-weight: 600">[Client name]</span>
+      <span>[Phone] · [Email]</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px solid #1B1A17; padding-top: 6px">
+      <span style="font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #5F5B53">Insured property</span>
+      <span style="font-weight: 600">412 Oak Lane</span>
+      <span>[City, State ZIP]</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px solid #1B1A17; padding-top: 6px">
+      <span style="font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #5F5B53">Insurance</span>
+      <span style="font-weight: 600">[Insurer] · Policy [Policy #]</span>
+      <span>Agent: [Agent name] · [Agent phone]</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px solid #1B1A17; padding-top: 6px">
+      <span style="font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #5F5B53">Inventory taken</span>
+      <span style="font-weight: 600">Nov 18 – 25, 2026</span>
+      <span>Prepared by [Organizer name], [Business]</span>
+    </div>
+  </div>
+
+  <section style="display: flex; flex-direction: column; gap: 6px">
+    <h2 style="margin: 0; font-size: 13px; font-weight: 600">Summary by room</h2>
+    <table style="width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums">
+      <thead>
+        <tr style="color: #5F5B53; text-align: left; border-bottom: 1px solid #D9D4C9">
+          <th scope="col" style="font-weight: 600; padding: 5px 0">Room</th>
+          <th scope="col" style="font-weight: 600; padding: 5px 0; width: 60px; text-align: right">Items</th>
+          <th scope="col" style="font-weight: 600; padding: 5px 0; width: 110px; text-align: right">Purchase total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #EFECE5"><td style="padding: 5px 0">Living Room</td><td style="text-align: right">18</td><td style="text-align: right">$12,450</td></tr>
+        <tr style="border-bottom: 1px solid #EFECE5"><td style="padding: 5px 0">Kitchen</td><td style="text-align: right">24</td><td style="text-align: right">$9,870</td></tr>
+        <tr style="border-bottom: 1px solid #EFECE5"><td style="padding: 5px 0">Primary Bedroom</td><td style="text-align: right">14</td><td style="text-align: right">$8,200</td></tr>
+        <tr style="border-bottom: 1px solid #EFECE5"><td style="padding: 5px 0">Bedroom 2</td><td style="text-align: right">9</td><td style="text-align: right">$3,150</td></tr>
+        <tr style="border-bottom: 1px solid #EFECE5"><td style="padding: 5px 0">Office</td><td style="text-align: right">11</td><td style="text-align: right">$10,300</td></tr>
+        <tr style="border-bottom: 1px solid #EFECE5"><td style="padding: 5px 0">Garage</td><td style="text-align: right">10</td><td style="text-align: right">$4,350</td></tr>
+      </tbody>
+      <tfoot>
+        <tr style="border-top: 1.5px solid #1B1A17"><th scope="row" style="text-align: left; padding: 6px 0; font-weight: 600">Total</th><td style="text-align: right; font-weight: 600">86</td><td style="text-align: right; font-weight: 600">$48,320</td></tr>
+      </tfoot>
+    </table>
+  </section>
+
+  <footer style="margin-top: auto; display: flex; justify-content: space-between; font-size: 9px; color: #5F5B53; border-top: 1px solid #E3DFD6; padding-top: 8px">
+    <span>Purchase prices from receipts or owner records. Generated on device.</span>
+    <span>Page 1 of 38</span>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":612,"height":792}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

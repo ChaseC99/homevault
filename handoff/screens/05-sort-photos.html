@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sort photos into items</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2E5E4E;text-decoration:none}a:hover{color:#1F4337}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; box-sizing: border-box; background: #F5F3EE; font-family: Inter, system-ui, sans-serif; color: #1B1A17; overflow: hidden">
+  <div style="padding: 48px 20px 0; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <a href="Room.dc.html" style="display: flex; align-items: center; gap: 2px; font-size: 15px; font-weight: 500; min-height: 44px; margin-left: -6px">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>Living Room
+      </a>
+      <a href="Room.dc.html" style="font-size: 15px; font-weight: 600; min-height: 44px; display: flex; align-items: center">Done</a>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h1 style="margin: 0; font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; font-weight: 600">Sort photos</h1>
+      <span style="font-size: 13px; color: #5F5B53">Tap the photos that show the same thing, then Make item. <strong style="font-weight: 600; color: #1B1A17">{{ unsortedLabel }}</strong></span>
+    </div>
+
+    <div style="display: flex; gap: 6px; flex-wrap: wrap; min-height: 34px">
+      <sc-for list="{{ items }}" as="it" hint-placeholder-count="2">
+        <span style="height: 34px; padding: 0 12px; border-radius: 17px; background: #E3EDE8; border: 1px solid #B9D1C6; display: flex; align-items: center; font-size: 13px; font-weight: 600; color: #1F4337">{{ it.label }}</span>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+      <sc-for list="{{ photos }}" as="p" hint-placeholder-count="12">
+        <button type="button" onClick="{{ p.toggle }}" aria-pressed="{{ p.selected }}" aria-label="Photo {{ p.num }}" style="{{ p.style }}">
+          <sc-if value="{{ p.selected }}" hint-placeholder-val="{{ false }}">
+            <span style="position: absolute; right: 6px; top: 6px; width: 24px; height: 24px; border-radius: 12px; background: #2E5E4E; color: #FFFFFF; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg>
+            </span>
+          </sc-if>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 20px 30px; background: #FFFFFF; border-top: 1px solid #E3DFD6; display: flex; align-items: center; gap: 12px">
+    <span style="flex: 1; font-size: 14px; color: #5F5B53">{{ selectedLabel }}</span>
+    <button type="button" onClick="{{ makeItem }}" style="height: 48px; padding: 0 20px; border-radius: 14px; border: 0; background: {{ ctaBg }}; color: #FFFFFF; font-size: 15px; font-weight: 600">Make item</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+var ids = [];
+for (var i = 1; i <= 23; i++) ids.push(i);
+this.state = { unsorted: ids, selected: [1, 2, 3], items: [] };
+}
+renderVals() {
+var s = this.state;
+var self = this;
+var shown = s.unsorted.slice(0, 12);
+var photos = shown.map(function (id) {
+var sel = s.selected.indexOf(id) !== -1;
+return {
+num: id,
+selected: sel,
+style: 'position: relative; height: 106px; border-radius: 10px; padding: 0; background: #E7E2D8; ' + (sel ? 'border: 3px solid #2E5E4E; opacity: 1' : 'border: 3px solid transparent'),
+toggle: function () {
+var next = sel ? s.selected.filter(function (x) { return x !== id; }) : s.selected.concat([id]);
+self.setState({ selected: next });
+}
+};
+});
+var n = s.selected.length;
+return {
+photos: photos,
+items: s.items.map(function (it, i) { return { label: 'Item ' + (i + 1) + ' · ' + it + (it === 1 ? ' photo' : ' photos') }; }),
+unsortedLabel: s.unsorted.length + ' left to sort.',
+selectedLabel: n === 0 ? 'Select photos' : n + (n === 1 ? ' photo selected' : ' photos selected'),
+ctaBg: n === 0 ? '#A9A396' : '#2E5E4E',
+makeItem: function () {
+if (n === 0) return;
+self.setState({
+unsorted: s.unsorted.filter(function (x) { return s.selected.indexOf(x) === -1; }),
+items: s.items.concat([n]),
+selected: []
+});
+}
+};
+}
+}
+</script>
+</body>
+</html>

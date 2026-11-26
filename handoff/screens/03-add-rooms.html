@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add rooms</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2E5E4E;text-decoration:none}a:hover{color:#1F4337}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; box-sizing: border-box; background: #F5F3EE; font-family: Inter, system-ui, sans-serif; color: #1B1A17; overflow: hidden">
+  <div style="padding: 48px 24px 0; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <a href="Property.dc.html" style="font-size: 15px; font-weight: 500; min-height: 44px; display: flex; align-items: center">Cancel</a>
+      <h1 style="margin: 0; font-size: 17px; font-weight: 600">Add rooms</h1>
+      <a href="Property.dc.html" style="font-size: 15px; font-weight: 600; min-height: 44px; display: flex; align-items: center">Done</a>
+    </div>
+
+    <p style="margin: 0; font-size: 14px; line-height: 1.45; color: #5F5B53">Tap a room type to add it. Tap again for another — numbers are added for you (Bedroom 4, Bedroom 5…).</p>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <sc-for list="{{ tiles }}" as="t" hint-placeholder-count="12">
+        <button type="button" onClick="{{ t.add }}" style="height: 72px; border-radius: 14px; border: 1px solid #E3DFD6; background: #FFFFFF; color: #1B1A17; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 10px 12px; text-align: left">
+          <span style="font-size: 14px; font-weight: 600; line-height: 1.2">{{ t.type }}</span>
+          <span style="font-size: 12px; color: #5F5B53">{{ t.countLabel }}</span>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; gap: 8px; align-items: flex-end">
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+        <label for="custom" style="font-size: 13px; font-weight: 600; color: #5F5B53">Or name your own</label>
+        <input id="custom" type="text" placeholder="e.g. Sunroom, Wine cellar" style="height: 44px; border-radius: 12px; border: 1px solid #E3DFD6; background: #FFFFFF; padding: 0 14px; font: inherit; font-size: 15px; color: #1B1A17">
+      </div>
+      <button type="button" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 0; background: #1B1A17; color: #FFFFFF; font-size: 14px; font-weight: 600">Add</button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 13px; font-weight: 600; color: #5F5B53">Adding to Nguyen residence</span>
+      <sc-if value="{{ noneAdded }}" hint-placeholder-val="{{ false }}">
+        <span style="font-size: 14px; color: #5F5B53">Nothing yet</span>
+      </sc-if>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <sc-for list="{{ added }}" as="r" hint-placeholder-count="2">
+          <span style="height: 36px; padding: 0 4px 0 12px; border-radius: 18px; background: #E3EDE8; border: 1px solid #B9D1C6; display: flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 600; color: #1F4337">
+            {{ r.name }}
+            <button type="button" onClick="{{ r.remove }}" aria-label="Remove {{ r.name }}" style="width: 28px; height: 28px; border: 0; background: transparent; color: #1F4337; display: flex; align-items: center; justify-content: center; padding: 0">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+            </button>
+          </span>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 24px; right: 24px; bottom: 34px">
+    <a href="Property.dc.html" style="height: 52px; border-radius: 14px; background: #2E5E4E; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600">{{ ctaLabel }}</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { added: [{ type: 'Bedroom', name: 'Bedroom 4' }, { type: 'Bathroom', name: 'Bathroom 3' }] };
+}
+renderVals() {
+var base = { 'Bedroom': 3, 'Bathroom': 2, 'Kitchen': 1, 'Living Room': 1, 'Dining Room': 0, 'Office': 1, 'Family Room': 0, 'Laundry': 0, 'Garage': 0, 'Basement': 0, 'Closet': 0, 'Patio / Yard': 0 };
+var added = this.state.added;
+var self = this;
+var tiles = Object.keys(base).map(function (type) {
+var n = base[type] + added.filter(function (a) { return a.type === type; }).length;
+return {
+type: type,
+countLabel: n === 0 ? 'None yet' : (n === 1 ? '1 in home' : n + ' in home'),
+add: function () {
+var name = n === 0 ? type : type + ' ' + (n + 1);
+self.setState({ added: added.concat([{ type: type, name: name }]) });
+}
+};
+});
+return {
+tiles: tiles,
+added: added.map(function (a, i) {
+return { name: a.name, remove: function () { self.setState({ added: added.filter(function (_, j) { return j !== i; }) }); } };
+}),
+noneAdded: added.length === 0,
+ctaLabel: added.length === 0 ? 'Done' : 'Add ' + added.length + (added.length === 1 ? ' room' : ' rooms')
+};
+}
+}
+</script>
+</body>
+</html>
