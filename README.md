@@ -26,7 +26,7 @@ The repository includes the local OCR model, WASM engine, PDF worker, fonts, and
 4. Launch from the installed icon; confirm offline readiness there before visiting a home. Turn on airplane mode and try importing a photo, reading a receipt, and generating a report.
 5. Allow camera access when you enter either capture flow. If live capture is unavailable, the shutter opens the phone camera and Import photos is shown. More camera options also offers import, native capture, and retry. Live capture feature-detects `ImageCapture.takePhoto()`; More camera options identifies when the fallback uses video resolution. Serial-number readability, focus, and iPhone-specific quality still need hands-on hardware testing.
 
-Close all Homevault tabs/windows and reopen to apply a newly built app version. The service worker waits for the prior version to close to avoid interrupting an active session.
+Updates download in the background while online, with checks on launch, when returning to the app, and through **Check offline readiness** in Settings. Once a full update is downloaded, **Update available → Restart** appears on Properties and property, room, or item pages. Finish camera/form/report work and return to one of those pages to restart. Restart reloads the same page with the new version and preserves saved inventory and photos; other open windows are not automatically reloaded. If you skip Restart, closing all Homevault tabs/windows still lets the update activate. Installations predating the update notice need that manual close/reopen once to receive it.
 
 ## GitHub Pages
 
@@ -52,7 +52,7 @@ Open **http://127.0.0.1:4173/homevault/**. Use the same `BASE_PATH` for the buil
 
 The manifest launches within the configured path; its default identity comes from that launch URL. The service worker resolves assets from its own directory and only removes old caches for that app path. Runtime asset URLs use Vite's `BASE_URL`; see the [Vite base-path guidance](https://vite.dev/guide/build.html#public-base-path) and [Pages deployment guide](https://vite.dev/guide/static-deploy.html#github-pages).
 
-After deployment, confirm **Ready offline** in **Organizer & device**, install on a phone, then test offline reload, camera capture, receipt OCR, PDF export/sharing, and an update after closing all app windows. Inventories on localhost remain on localhost: deploying does not migrate browser storage or provide backup/sync.
+After deployment, confirm **Ready offline** in **Organizer & device**, install on a phone, then test offline reload, camera capture, receipt OCR, PDF export/sharing, and **Update available → Restart** after the next release. Inventories on localhost remain on localhost: deploying does not migrate browser storage or provide backup/sync.
 
 ## Workflow
 

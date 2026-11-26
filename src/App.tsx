@@ -17,6 +17,7 @@ import { Sort } from './components/Sort';
 import { Details, ItemRecord } from './components/Details';
 import { Reports } from './components/Reports';
 import { DeleteConfirmation } from './components/DeleteConfirmation';
+import { UpdateNotice } from './components/UpdateNotice';
 import {
   Back,
   Button,
@@ -755,6 +756,7 @@ export default function App() {
           </a>
         </nav>
       )}
+      <UpdateNotice visible={['', 'property', 'room', 'item'].includes(kind) && !toast} />
       {toast && !cameraScreen && (
         <div className="toast" role="status">
           <CheckCircle2 size={18} />

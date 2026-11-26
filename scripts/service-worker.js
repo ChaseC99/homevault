@@ -58,6 +58,10 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
   if (event.data !== 'CHECK_READY' && event.data?.type !== 'CHECK_READY') return;
   event.waitUntil(
     (async () => {

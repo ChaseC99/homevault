@@ -1,5 +1,106 @@
 import { assetUrl } from './asset-url';
 
+async function appRegistration() {
+  const scope = new URL(import.meta.env.BASE_URL, location.href).href;
+  const registration = await navigator.serviceWorker.getRegistration(scope);
+  // An unrelated worker at the origin root must not stand in for this app's worker.
+  return registration?.scope === scope
+    ? registration
+    : navigator.serviceWorker.register(assetUrl('sw.js'), { scope });
+}
+
+// Keep watching while the notice is hidden during capture or editing.
+export function watchForUpdates(onUpdate: (worker: ServiceWorker | undefined) => void) {
+  if (!('serviceWorker' in navigator) || !import.meta.env.PROD) return () => {};
+  let disposed = false;
+  let cleanup = () => {};
+  void appRegistration()
+    .then((registration) => {
+      if (disposed) return;
+      const workers = new Set<ServiceWorker>();
+      let offered: ServiceWorker | undefined;
+      let controller = navigator.serviceWorker.controller;
+      const offer = (worker: ServiceWorker) => {
+        offered = worker;
+        onUpdate(worker);
+      };
+      const inspect = () => {
+        if (registration.active && registration.waiting) offer(registration.waiting);
+        else if (offered?.state === 'redundant') {
+          offered = undefined;
+          onUpdate(undefined);
+        }
+      };
+      const installing = () => {
+        const worker = registration.installing;
+        if (worker && !workers.has(worker)) {
+          workers.add(worker);
+          worker.addEventListener('statechange', inspect);
+        }
+        inspect();
+      };
+      const changed = () => {
+        const next = navigator.serviceWorker.controller;
+        // Another window may activate an update. Offer a restart, never reload its peers.
+        if (controller && next && next !== controller) offer(next);
+        controller = next;
+      };
+      const resumed = () => {
+        if (document.visibilityState === 'visible' && navigator.onLine)
+          void registration.update().catch(() => {});
+      };
+      registration.addEventListener('updatefound', installing);
+      navigator.serviceWorker.addEventListener('controllerchange', changed);
+      document.addEventListener('visibilitychange', resumed);
+      installing();
+      cleanup = () => {
+        registration.removeEventListener('updatefound', installing);
+        navigator.serviceWorker.removeEventListener('controllerchange', changed);
+        document.removeEventListener('visibilitychange', resumed);
+        for (const worker of workers) worker.removeEventListener('statechange', inspect);
+      };
+    })
+    .catch(() => {}); // Offline setup reports registration errors separately.
+  return () => {
+    disposed = true;
+    cleanup();
+  };
+}
+
+export function activateUpdate(worker: ServiceWorker): Promise<void> {
+  if (navigator.serviceWorker.controller === worker && worker.state === 'activated')
+    return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('controllerchange', changed);
+      worker.removeEventListener('statechange', changed);
+    };
+    const changed = () => {
+      if (navigator.serviceWorker.controller === worker && worker.state === 'activated') {
+        cleanup();
+        resolve();
+      } else if (worker.state === 'redundant') {
+        cleanup();
+        reject(Error('This update is no longer available. Check for updates again.'));
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(Error('Could not restart yet. Please try again.'));
+    }, 15000);
+    navigator.serviceWorker.addEventListener('controllerchange', changed);
+    worker.addEventListener('statechange', changed);
+    try {
+      worker.postMessage({ type: 'SKIP_WAITING' });
+      changed();
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
+}
+
 function activeWorker(registration: ServiceWorkerRegistration): Promise<ServiceWorker> {
   if (registration.active) return Promise.resolve(registration.active);
   const worker = registration.installing ?? registration.waiting;
@@ -31,12 +132,8 @@ function activeWorker(registration: ServiceWorkerRegistration): Promise<ServiceW
 
 export async function checkOffline(): Promise<boolean> {
   if (!('serviceWorker' in navigator) || !import.meta.env.PROD) return false;
-  const scope = new URL(import.meta.env.BASE_URL, location.href).href;
-  let registration = await navigator.serviceWorker.getRegistration(scope);
-  // An unrelated worker at the origin root must not stand in for this app's worker.
-  if (registration?.scope !== scope)
-    registration = await navigator.serviceWorker.register(assetUrl('sw.js'), { scope });
-  else if (navigator.onLine) registration.update().catch(() => {});
+  const registration = await appRegistration();
+  if (registration.active && navigator.onLine) registration.update().catch(() => {});
   const worker = await activeWorker(registration);
   return new Promise<boolean>((resolve, reject) => {
     const channel = new MessageChannel();

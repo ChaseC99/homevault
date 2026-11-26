@@ -2,6 +2,12 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## App update revision
+
+Verified against the layout and deletion revision with **28 unit/integration tests**, the production build, and **22 Chromium browser scenarios**.
+
+Update checks run on launch, resume, and manual offline checks. A real two-release HTTP fixture verifies that the restart notice waits for a complete download, survives reload while the update waits, and activates/reloads the same route offline after Restart. Saved inventory and original-photo hashes are unchanged. Failed downloads retain the old version, and a later manual check can recover. Restarting one window leaves an unfinished form in another window intact; that window can restart after leaving the form. The notice was inspected at 320 px (`artifacts/update-notice-320.png`). Installed iPhone resume/update behavior remains a physical-device check.
+
 ## Layout and deletion revision
 
 Verified the isolated commit contents with **28 unit/integration tests**, the production build, and **20 Chromium scenarios**. Two targeted WebKit scenarios pass for mobile date layout/persistence and contextual navigation.
