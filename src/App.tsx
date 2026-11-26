@@ -14,7 +14,9 @@ import { checkOffline } from './lib/offline';
 import { PropertyForm, AddRooms, Settings, type Run } from './components/Setup';
 import { Capture, CaptureSetup } from './components/Capture';
 import { Sort } from './components/Sort';
-import { Details, ItemRecord } from './components/Details';
+import { Details } from './components/Details';
+import { canNavigate } from './lib/navigation';
+import { LocationLink } from './components/LocationLink';
 import { Reports } from './components/Reports';
 import { DeleteConfirmation } from './components/DeleteConfirmation';
 import { UpdateNotice } from './components/UpdateNotice';
@@ -37,7 +39,7 @@ function Status({ s }: { s: ReturnType<typeof stats> }) {
   return (
     <Badge warn={s.unsorted > 0 || s.needs > 0}>
       {s.unsorted
-        ? `${s.unsorted} to sort`
+        ? `${s.unsorted} to label`
         : s.needs
           ? `${s.needs} need details`
           : s.ready
@@ -194,12 +196,7 @@ function PropertyView({ data, property }: { data: Inventory; property: Property 
         <div>
           <h1>{property.name}</h1>
           {property.address && <p>{property.address}</p>}
-          {property.location && (
-            <small>
-              GPS: {property.location.latitude.toFixed(5)}, {property.location.longitude.toFixed(5)}{' '}
-              · ±{Math.round(property.location.accuracy)} m
-            </small>
-          )}
+          {property.location && <LocationLink location={property.location} />}
         </div>
         <Button kind="text" onClick={() => go(`/edit-property/${property.id}`)}>
           Edit
@@ -239,7 +236,7 @@ function PropertyView({ data, property }: { data: Inventory; property: Property 
                     <strong>{r.name}</strong>
                     <small>
                       {rs.unsorted
-                        ? `${rs.unsorted} photos to sort`
+                        ? `${rs.unsorted} photos to label`
                         : rs.items.length
                           ? `${rs.items.length} items · ${rs.needs ? `${rs.needs} need details` : 'all reviewed'}`
                           : r.roomPhotos.length
@@ -390,9 +387,9 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
               <button onClick={() => go(`/sort/${room.id}`)}>
                 <LayoutGrid size={18} />
                 <strong className="grow">
-                  {s.unsorted} {s.unsorted === 1 ? 'photo' : 'photos'} to sort
+                  {s.unsorted} {s.unsorted === 1 ? 'photo' : 'photos'} to label
                 </strong>
-                <span>Sort</span>
+                <span>Label</span>
                 <ChevronRight size={18} />
               </button>
             )}
@@ -566,7 +563,7 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
               }, 'Moved to item photos')
             }
           >
-            Move to item photos for sorting
+            Move to item photos for labeling
           </Button>
         </div>
       )}
@@ -604,8 +601,19 @@ export default function App() {
   useEffect(() => {
     refresh();
     ready();
-    const hash = () => {
-      setRoute(location.hash.slice(1) || '/');
+    let currentURL = location.href;
+    let navigation = 0;
+    const hash = async () => {
+      const request = ++navigation;
+      const destination = location.href;
+      const allowed = await canNavigate();
+      if (request !== navigation) return;
+      if (!allowed) {
+        history.replaceState(null, '', currentURL);
+        return;
+      }
+      currentURL = destination;
+      setRoute(new URL(destination).hash.slice(1) || '/');
       setToast('');
       setScrolled(false);
       window.scrollTo(0, 0);
@@ -661,10 +669,18 @@ export default function App() {
     screen = (
       <CaptureSetup key={route} data={data} initialProperty={params.get('property') ?? undefined} />
     );
-  else if (kind === 'sort' && r) screen = <Sort key={r.id} data={data} room={r} run={run} />;
-  else if (kind === 'details' && i)
+  else if (kind === 'sort' && r)
+    screen = (
+      <Sort
+        key={r.id}
+        data={data}
+        room={r}
+        run={run}
+        editingItemId={params.get('item') ?? undefined}
+      />
+    );
+  else if ((kind === 'details' || kind === 'item') && i)
     screen = <Details key={i.id} data={data} item={i} run={run} session={session} />;
-  else if (kind === 'item' && i) screen = <ItemRecord key={i.id} data={data} item={i} run={run} />;
   else if (kind === 'reports') screen = <Reports data={data} initialProperty={key} run={run} />;
   else if (kind === 'settings')
     screen = <Settings data={data} run={run} offline={offline} retryOffline={ready} />;
@@ -678,7 +694,15 @@ export default function App() {
         Return to your properties to continue.
       </Empty>
     );
-  const immersive = ['capture', 'details', 'sort', 'rooms', 'new', 'edit-property'].includes(kind);
+  const immersive = [
+    'capture',
+    'details',
+    'item',
+    'sort',
+    'rooms',
+    'new',
+    'edit-property',
+  ].includes(kind);
   const cameraScreen = kind === 'capture' && !!r;
   const roomScreen = kind === 'room' && !!r;
   const cameraRoom = roomScreen ? r : undefined;
@@ -756,7 +780,7 @@ export default function App() {
           </a>
         </nav>
       )}
-      <UpdateNotice visible={['', 'property', 'room', 'item'].includes(kind) && !toast} />
+      <UpdateNotice visible={['', 'property', 'room'].includes(kind) && !toast} />
       {toast && !cameraScreen && (
         <div className="toast" role="status">
           <CheckCircle2 size={18} />

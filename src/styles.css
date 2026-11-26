@@ -2173,7 +2173,7 @@ main.room-main {
   }
 }
 
-/* Name a group without leaving the sorting flow. */
+/* Saved items remain accessible from the labeling grid. */
 .grouped-section {
   min-width: 0;
   display: flex;
@@ -2234,62 +2234,37 @@ main.room-main {
 .group-open small {
   font-size: 0.75rem;
 }
-.group-add-name {
+/* Share one editable item page across room and photo-grid entry paths. */
+.editor-fields {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
   border: 0;
-  border-top: 1px solid var(--line);
-  background: #f8faf8;
-  color: var(--green);
-  min-height: 44px;
-  width: 100%;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
-.naming-sheet {
-  width: min(480px, 100%);
-  max-width: 100%;
-  max-height: calc(100dvh - 24px);
-  margin: auto auto 0;
-  padding: 22px 24px max(16px, env(safe-area-inset-bottom));
-  background: var(--bg);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: 24px 24px 0 0;
+.review-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
 }
-.naming-sheet::backdrop {
-  background: #0007;
+.review-check input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin: 2px 0 0;
 }
-.naming-sheet .stack {
-  gap: 14px;
+.photo-options .row {
+  flex-wrap: wrap;
 }
-.naming-close {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  background: transparent;
-  border-radius: 50%;
+.photo-options .photo {
+  width: 48px;
+  height: 48px;
 }
-.naming-photos .photo {
-  width: 72px;
-  height: 72px;
-}
-.naming-error {
-  color: #922f20;
-  background: #fff0eb;
-  border-radius: 10px;
-  padding: 12px;
-  font-size: 0.875rem;
-}
-.naming-sheet .button.text {
-  min-height: 44px;
-}
-@media (max-width: 360px) {
-  .naming-sheet {
-    padding-left: 18px;
-    padding-right: 18px;
-  }
+.location-link {
+  width: fit-content;
+  margin-top: 8px;
 }
 
 .button.destructive {
