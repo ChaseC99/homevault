@@ -9,10 +9,12 @@ import {
   title,
   validateItem,
 } from '../lib/model';
-import { mutate, getAsset, errorMessage } from '../lib/db';
-import { prepareAsset, downloadBlob } from '../lib/media';
-import { readReceipt } from '../lib/ocr';
+import { mutate, errorMessage } from '../lib/db';
+import { prepareAsset } from '../lib/media';
+import { readReceipt, readSerialNumber } from '../lib/ocr';
 import { Back, Button, Field, FilePicker, Photo, PhotoViewer, Badge, go } from './shared';
+import { ScanLine, X } from 'lucide-react';
+import { ReceiptPreview } from './ReceiptPreview';
 import type { Run } from './Setup';
 type Form = Omit<Item, 'unitPriceCents'> & { price: string };
 const toForm = (item: Item): Form => ({
@@ -35,6 +37,22 @@ export function Details({
     [progress, setProgress] = useState(''),
     [saveStatus, setSaveStatus] = useState(''),
     [viewer, setViewer] = useState('');
+  const [removed, setRemoved] = useState<{ id: string; index: number }>();
+  const [serialResult, setSerialResult] = useState<{ text: string; serial?: string }>();
+  const [serialProgress, setSerialProgress] = useState('');
+  const categories = Array.from(
+    new Map(
+      [
+        'Furniture',
+        'Electronics',
+        'Art',
+        'Decor',
+        'Appliances',
+        'Jewelry',
+        ...data.items.map((i) => i.category.trim()).filter(Boolean),
+      ].map((category) => [category.toLowerCase(), category]),
+    ).values(),
+  );
   const current = useRef(form),
     dirty = useRef(false),
     timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -149,6 +167,9 @@ export function Details({
     ));
   return (
     <>
+      <Back to={`/item/${item.id}`} disabled={busy} onClick={() => void finish(false, false)}>
+        Save & back
+      </Back>
       <div className="row">
         <Button kind="text" disabled={busy} onClick={() => finish(false, false)}>
           Save draft & exit
@@ -167,17 +188,67 @@ export function Details({
         <h1>{session ? 'One item at a time.' : 'The details matter.'}</h1>
         <p>Record what you know. Unknown details can stay blank.</p>
       </header>
-      <div className="photo-strip large">
+      <div className="photo-strip editable-photos">
         {item.photos.map((p, n) => (
-          <Photo key={p} id={p} alt={`Open item photo ${n + 1}`} onClick={() => setViewer(p)} />
+          <div className="editable-photo" key={p}>
+            <Photo id={p} alt={`Open item photo ${n + 1}`} onClick={() => setViewer(p)} />
+            <button
+              className="remove-photo"
+              aria-label={`Remove item photo ${n + 1}`}
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  await mutate((d) => {
+                    const target = d.items.find((i) => i.id === item.id)!;
+                    target.photos = target.photos.filter((id) => id !== p);
+                  });
+                  setRemoved({ id: p, index: n });
+                }, 'Photo removed')
+              }
+            >
+              <X size={16} />
+            </button>
+          </div>
         ))}
       </div>
+      {removed && (
+        <div className="notice" role="status">
+          <span>Photo removed.</span>
+          <Button
+            kind="text"
+            onClick={() =>
+              run(async () => {
+                await mutate((d) => {
+                  const target = d.items.find((i) => i.id === item.id)!;
+                  if (!target.photos.includes(removed.id))
+                    target.photos.splice(removed.index, 0, removed.id);
+                });
+                setRemoved(undefined);
+              }, 'Photo restored')
+            }
+          >
+            Undo
+          </Button>
+        </div>
+      )}
       <div className="stack">
         <section className="card form-card">
-          {fields([
-            ['name', 'Item name'],
-            ['category', 'Category'],
-          ])}
+          {fields([['name', 'Item name']])}
+          <Field label="Category" hint="Choose a suggestion or type your own category.">
+            <input
+              aria-label="Category"
+              list="item-categories"
+              value={form.category}
+              maxLength={180}
+              onChange={(e) => update('category', e.target.value)}
+              autoComplete="off"
+            />
+            <datalist id="item-categories">
+              {categories.map((category) => (
+                <option key={category} value={category} />
+              ))}
+            </datalist>
+          </Field>
         </section>
         <section className="card form-card">
           <div className="row">
@@ -225,8 +296,10 @@ export function Details({
                 <div className="receipt-amount">
                   <strong>Receipt total: {money(r.amount)}</strong>
                   <p>
-                    Is this amount for one unit, or all {form.quantity} units of this item? Ignore
-                    it if it includes other purchases.
+                    {form.quantity > 1
+                      ? `Is this amount for one unit, or all ${form.quantity} units of this item? `
+                      : 'Use this amount if the receipt is for this item. '}
+                    Ignore it if it includes other purchases.
                   </p>
                   <div className="button-row">
                     <Button
@@ -236,33 +309,25 @@ export function Details({
                     >
                       Use as unit price
                     </Button>
-                    <Button
-                      kind="secondary"
-                      disabled={busy || !Number.isInteger(form.quantity) || form.quantity < 1}
-                      onClick={() =>
-                        update('price', (Math.round(r.amount! / form.quantity) / 100).toFixed(2))
-                      }
-                    >
-                      Divide by {form.quantity}
-                    </Button>
+                    {form.quantity > 1 && (
+                      <Button
+                        kind="secondary"
+                        disabled={busy || !Number.isInteger(form.quantity)}
+                        onClick={() =>
+                          update('price', (Math.round(r.amount! / form.quantity) / 100).toFixed(2))
+                        }
+                      >
+                        Divide by {form.quantity}
+                      </Button>
+                    )}
                   </div>
                   {form.quantity > 1 && (
                     <small>Division rounds the unit price to the nearest cent.</small>
                   )}
                 </div>
               )}
+              <ReceiptPreview assetId={r.assetId} label={`Receipt ${n + 1}`} />
               <div className="button-row">
-                <Button
-                  kind="text"
-                  onClick={() =>
-                    run(async () => {
-                      const asset = await getAsset(r.assetId);
-                      if (asset) downloadBlob(asset.original, asset.name);
-                    })
-                  }
-                >
-                  View original
-                </Button>
                 <Button kind="text" disabled={busy} onClick={() => scan(r.id)}>
                   Read again
                 </Button>
@@ -337,8 +402,61 @@ export function Details({
           {fields([
             ['brand', 'Brand'],
             ['model', 'Model'],
-            ['serialNumber', 'Serial number'],
           ])}
+          <div className="field">
+            <label htmlFor="serial-number">Serial number</label>
+            <div className="input-with-action">
+              <input
+                id="serial-number"
+                value={form.serialNumber}
+                maxLength={180}
+                onChange={(e) => update('serialNumber', e.target.value)}
+              />
+              <FilePicker
+                label="Scan serial number"
+                icon={<ScanLine size={20} />}
+                iconOnly
+                capture
+                disabled={busy}
+                onFiles={async (files) => {
+                  if (!files[0]) return;
+                  setBusy(true);
+                  setSerialProgress('Reading serial number…');
+                  setSerialResult(undefined);
+                  await run(async () =>
+                    setSerialResult(await readSerialNumber(files[0], setSerialProgress)),
+                  );
+                  setSerialProgress('');
+                  setBusy(false);
+                }}
+              />
+            </div>
+          </div>
+          {serialProgress && <p role="status">{serialProgress}</p>}
+          {serialResult && (
+            <div className="stack notice serial-result">
+              <p>
+                {serialResult.serial
+                  ? `Found: ${serialResult.serial}. Check the label before applying.`
+                  : 'No clear serial number found. Enter it manually or try a closer photo.'}
+              </p>
+              {serialResult.serial && (
+                <Button
+                  kind="secondary"
+                  onClick={() => {
+                    update('serialNumber', serialResult.serial!);
+                    setSerialResult(undefined);
+                  }}
+                >
+                  Use serial number
+                </Button>
+              )}
+              <details>
+                <summary>Recognized label text</summary>
+                <pre>{serialResult.text || 'No text recognized'}</pre>
+              </details>
+            </div>
+          )}
         </section>
         <section className="card form-card">
           <h2>Condition & notes</h2>
@@ -384,6 +502,9 @@ export function ItemRecord({ data, item, run }: { data: Inventory; item: Item; r
   const [active, setActive] = useState(item.photos[0] ?? ''),
     [viewer, setViewer] = useState(''),
     [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!item.photos.includes(active)) setActive(item.photos[0] ?? '');
+  }, [item.photos, active]);
   const room = data.rooms.find((r) => r.id === item.roomId)!,
     property = data.properties.find((p) => p.id === room.propertyId)!;
   const dl = (rows: [string, string | number][]) => (
@@ -391,7 +512,7 @@ export function ItemRecord({ data, item, run }: { data: Inventory; item: Item; r
       {rows.map(([label, value]) => (
         <div key={label}>
           <dt>{label}</dt>
-          <dd>{value || 'Not recorded'}</dd>
+          <dd>{value || '-'}</dd>
         </div>
       ))}
     </dl>
@@ -437,12 +558,9 @@ export function ItemRecord({ data, item, run }: { data: Inventory; item: Item; r
       </header>
       <h2>Purchase</h2>
       {dl([
-        ['Price per unit', money(item.unitPriceCents)],
+        ['Price per unit', item.unitPriceCents === null ? '-' : money(item.unitPriceCents)],
         ['Quantity', item.quantity],
-        [
-          'Item purchase total',
-          item.unitPriceCents === null ? 'Not recorded' : money(itemTotal(item)),
-        ],
+        ['Item purchase total', item.unitPriceCents === null ? '-' : money(itemTotal(item))],
         ['Purchased', item.purchaseDate],
         ['Where purchased', item.store],
       ])}
@@ -450,18 +568,7 @@ export function ItemRecord({ data, item, run }: { data: Inventory; item: Item; r
         <h3>Receipts</h3>
         {item.receipts.length ? (
           item.receipts.map((r, n) => (
-            <Button
-              key={r.id}
-              kind="secondary"
-              onClick={() =>
-                run(async () => {
-                  const a = await getAsset(r.assetId);
-                  if (a) downloadBlob(a.original, a.name);
-                })
-              }
-            >
-              View receipt {n + 1}
-            </Button>
+            <ReceiptPreview key={r.id} assetId={r.assetId} label={`Receipt ${n + 1}`} />
           ))
         ) : (
           <p>No receipt attached</p>

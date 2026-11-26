@@ -1,5 +1,5 @@
 import { createWorker } from 'tesseract.js';
-import { parseReceipt } from './receipt-parser';
+import { parseReceipt, parseSerialNumber } from './receipt-parser';
 import { getAsset, mutate, loadInventory } from './db';
 import { renderPdfPages } from './pdf-input';
 import { assetUrl } from './asset-url';
@@ -46,7 +46,7 @@ export async function readReceipt(
       const i = d.items.find((i) => i.id === itemId);
       const r = i?.receipts.find((r) => r.id === receiptId);
       if (r) {
-        Object.assign(r, fields, {
+        Object.assign(r, { store: undefined, date: undefined, amount: undefined }, fields, {
           text,
           status: count === 3 ? 'read' : count ? 'partial' : 'failed',
           error: count ? '' : 'No usable fields found. Enter details manually.',
@@ -65,5 +65,27 @@ export async function readReceipt(
     throw e;
   } finally {
     await worker?.terminate();
+  }
+}
+
+export async function readSerialNumber(file: Blob, progress: (message: string) => void) {
+  const worker = await createWorker('eng', 1, {
+    workerPath: assetUrl('ocr/worker.min.js'),
+    corePath: assetUrl('ocr'),
+    langPath: assetUrl('ocr'),
+    gzip: true,
+    cacheMethod: 'none',
+    logger: (m) =>
+      progress(
+        m.status === 'recognizing text'
+          ? `Reading serial number · ${Math.round(m.progress * 100)}%`
+          : 'Preparing on-device reader…',
+      ),
+  });
+  try {
+    const text = (await worker.recognize(file)).data.text;
+    return { text, serial: parseSerialNumber(text) };
+  } finally {
+    await worker.terminate();
   }
 }

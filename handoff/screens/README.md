@@ -14,9 +14,10 @@ These are the mockup sources from the design canvas, in flow order. Use them as 
 | 01-properties.html | Properties (home) |
 | 02-property.html | Property cover + rooms |
 | 03-add-rooms.html | Add rooms (auto-numbered) |
-| 04-walkthrough-camera.html | Walkthrough camera (room / items) |
+| 04-camera.html | Camera (room overview / items) |
 | 05-sort-photos.html | Sort photos into items |
-| 06-room.html | Room |
+| 06-room.html | Room (populated, cover photo header) |
+| 06a-room-empty.html | Room (empty, nothing photographed yet) |
 | 07-details-session.html | Details session with client + receipts |
 | 08-item-record.html | Item record |
 | 09-build-report.html | Build report |

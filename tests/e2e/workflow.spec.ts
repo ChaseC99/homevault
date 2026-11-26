@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { waitForOffline } from './helpers';
 import { PDFDocument } from 'pdf-lib';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -28,8 +29,7 @@ async function createRoom(page: Page) {
   await page.getByLabel('Property name', { exact: true }).fill('Oak residence');
   await page.getByLabel('Street, city, state and ZIP').fill('123 Example Lane\nPortland, OR 97201');
   await page.getByLabel('Client / policyholder name').fill('Sample client');
-  await page.getByLabel('Insurer', { exact: true }).fill('Example insurer');
-  await page.getByLabel('Policy number').fill('QA-001');
+  await expect(page.getByRole('heading', { name: 'Insurance', exact: true })).toHaveCount(0);
   await page
     .getByLabel('Choose exterior photo', { exact: true })
     .setInputFiles(fixture('photo-3.jpg'));
@@ -55,7 +55,26 @@ async function importPhotos(page: Page, names: string[]) {
   ).toBeVisible();
 }
 async function addItems(page: Page) {
-  await page.getByRole('button', { name: 'Add items One item, a few angles', exact: true }).click();
+  await page.getByRole('button', { name: 'Take photos in Living Room', exact: true }).click();
+}
+async function makeItem(page: Page, photos: number[]) {
+  for (const number of photos)
+    await page.getByRole('button', { name: `Photo ${number}`, exact: true }).click();
+  await page
+    .getByRole('button', {
+      name: `Group ${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}`,
+      exact: true,
+    })
+    .click();
+  const naming = page.getByRole('dialog', { name: 'What’s this item?' });
+  await naming.getByRole('button', { name: 'Name later', exact: true }).click();
+  await expect(naming).not.toBeVisible();
+}
+async function backToRoom(page: Page) {
+  await page
+    .getByRole('navigation', { name: 'Page navigation' })
+    .getByRole('button', { name: 'Living Room', exact: true })
+    .click();
 }
 test('complete offline workflow, real OCR, corrected unit price and complete PDF appendix', async ({
   page,
@@ -69,11 +88,11 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
     if (/^https?:/.test(r.url()) && !r.url().startsWith(baseURL!)) remote.push(r.url());
   });
   await page.goto('./');
-  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible({ timeout: 90000 });
+  await waitForOffline(page);
   await page.screenshot({ path: 'artifacts/home-mobile.png', fullPage: true });
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible();
+  await waitForOffline(page);
   await page.getByRole('button', { name: 'Organizer and device settings', exact: true }).click();
   await page.getByLabel('Organizer name', { exact: true }).fill('Alex Organizer');
   await page.getByLabel('Business', { exact: true }).fill('Example Organizing');
@@ -81,9 +100,7 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   await expect(page.getByRole('status')).toContainText('Organizer information saved');
   await page.getByRole('button', { name: 'Properties', exact: true }).click();
   await createRoom(page);
-  await page
-    .getByRole('button', { name: 'Add room overview shots The room as a whole', exact: true })
-    .click();
+  await page.getByRole('button', { name: 'Add overview shots', exact: true }).click();
   await importPhotos(page, ['photo-3.jpg', 'photo-4.jpg']);
   await expect(page.getByRole('button', { name: 'Next item', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
@@ -92,9 +109,11 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   await page.getByRole('button', { name: 'Move to item photos for sorting', exact: true }).click();
   await addItems(page);
   await importPhotos(page, ['photo-1.jpg', 'photo-2.jpg']);
-  await expect(page.getByRole('heading', { name: 'Item 1 · 2 photos', exact: true })).toBeVisible();
+  await expect(page.locator('.capture-count')).toHaveText('3');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await page.getByRole('button', { name: /Untitled item 2 photos/ }).click();
+  await makeItem(page, [2, 3]);
+  await backToRoom(page);
+  await page.getByRole('button', { name: /Item 1 2 photos/ }).click();
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('Item name', { exact: true }).fill('Walnut end table');
   await page.getByLabel('Category', { exact: true }).fill('Furniture');
@@ -137,6 +156,14 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   expect(state.items[0].unitPriceCents).toBe(38000);
   expect(state.items[0].receipts).toHaveLength(2);
   expect(state.rooms[0].unsortedPhotos).toHaveLength(1);
+  await expect(page.locator('.receipt-thumbnail img')).toHaveCount(2);
+  await page.getByRole('button', { name: 'View receipt 2', exact: true }).click();
+  const receiptDialog = page.getByRole('dialog', { name: 'Receipt 2', exact: true });
+  await expect(receiptDialog.getByRole('img', { name: 'Receipt 2, page 1' })).toBeVisible();
+  await receiptDialog.getByRole('button', { name: 'Next page', exact: true }).click();
+  await expect(receiptDialog.getByRole('img', { name: 'Receipt 2, page 2' })).toBeVisible();
+  await receiptDialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: 'artifacts/item-mobile.png', fullPage: true });
   await page.getByRole('link', { name: 'Properties', exact: true }).click();
   await expect(page.getByText('1 to sort', { exact: true })).toBeVisible();
@@ -166,12 +193,14 @@ test('blank receipts retain originals and quota errors leave prior inventory unc
   page,
 }) => {
   await page.goto('./');
-  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible({ timeout: 90000 });
+  await waitForOffline(page);
   await createRoom(page);
   await addItems(page);
   await importPhotos(page, ['photo-1.jpg']);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await page.getByRole('button', { name: /Untitled item 1 photos/ }).click();
+  await makeItem(page, [1]);
+  await backToRoom(page);
+  await page.getByRole('button', { name: /Item 1 1 photo/ }).click();
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('Attach image or PDF', { exact: true }).setInputFiles(fixture('blank.png'));
   await expect(page.getByText('Needs manual entry', { exact: true })).toBeVisible({
@@ -202,13 +231,15 @@ test('blank receipts retain originals and quota errors leave prior inventory unc
 });
 test('skipped drafts remain saved without cycling through the same session', async ({ page }) => {
   await page.goto('./');
-  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible({ timeout: 90000 });
+  await waitForOffline(page);
   await createRoom(page);
   await addItems(page);
   await importPhotos(page, ['photo-1.jpg']);
-  await page.getByRole('button', { name: 'Next item', exact: true }).click();
   await importPhotos(page, ['photo-4.jpg']);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await makeItem(page, [1]);
+  await makeItem(page, [1]);
+  await backToRoom(page);
   await page.getByRole('button', { name: /2 items need details/ }).click();
   await page.getByLabel('Item name', { exact: true }).fill('Draft one');
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
@@ -225,7 +256,7 @@ test('readiness detects a missing OCR model and repairs it when connected', asyn
   context,
 }) => {
   await page.goto('./');
-  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible({ timeout: 90000 });
+  await waitForOffline(page);
   await page.evaluate(async () => {
     for (const name of await caches.keys())
       await (await caches.open(name)).delete(new URL('ocr/eng.traineddata.gz', location.href).href);
@@ -235,7 +266,7 @@ test('readiness detects a missing OCR model and repairs it when connected', asyn
   await page.getByRole('button', { name: 'Check offline readiness', exact: true }).click();
   await expect(page.getByText('Offline setup needed', { exact: true })).toBeVisible();
   await context.setOffline(false);
-  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible({ timeout: 90000 });
+  await waitForOffline(page);
 });
 
 async function installCameraFixture(page: Page) {
@@ -271,7 +302,7 @@ async function installCameraFixture(page: Page) {
   );
 }
 
-test('simple live capture groups photos, undoes a split, saves on Done and never creates empty items', async ({
+test('live photos persist before sorting, zoom crops saved images, and no empty items are created', async ({
   page,
 }) => {
   await installCameraFixture(page);
@@ -279,32 +310,55 @@ test('simple live capture groups photos, undoes a split, saves on Done and never
   await createRoom(page);
   await page.screenshot({ path: 'artifacts/room-capture-actions-mobile.png', fullPage: true });
   await addItems(page);
-  const next = page.getByRole('button', { name: 'Next item', exact: true });
   const shutter = page.getByRole('button', { name: 'Take item photo', exact: true });
-  await expect(next).toBeDisabled();
-  await expect(page.getByRole('combobox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Next item', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   expect((await snapshot(page)).items).toHaveLength(0);
   await addItems(page);
   await expect(shutter).toBeEnabled();
-  // Two synchronous taps must produce one capture, even before React rerenders.
   await shutter.evaluate((button: HTMLButtonElement) => {
     button.click();
     button.click();
   });
   await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeDisabled();
-  await expect(page.getByRole('heading', { name: 'Item 1 · 1 photo', exact: true })).toBeVisible();
+  await expect(page.locator('.capture-count')).toHaveText('1');
+  const zoomToggle = page.getByRole('button', { name: 'Adjust zoom', exact: true });
+  const zoom = page.getByRole('slider', { name: 'Camera zoom' });
+  await expect(zoom).toHaveCount(0);
+  await zoomToggle.click();
+  await zoom.fill('2');
+  await expect(zoomToggle).toHaveText('2×');
   await shutter.click();
-  await expect(page.getByRole('heading', { name: 'Item 1 · 2 photos', exact: true })).toBeVisible();
+  await expect(page.locator('.capture-count')).toHaveText('2');
+  expect((await snapshot(page)).items).toHaveLength(0);
+  const dimensions = await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const r = indexedDB.open('jigsaw-homevault');
+      r.onsuccess = () => resolve(r.result);
+    });
+    const inventory = await new Promise<any>((resolve) => {
+      const q = db.transaction('state').objectStore('state').get('inventory');
+      q.onsuccess = () => resolve(q.result);
+    });
+    const sizes = [];
+    for (const id of inventory.rooms[0].unsortedPhotos) {
+      const asset = await new Promise<any>((resolve) => {
+        const q = db.transaction('assets').objectStore('assets').get(id);
+        q.onsuccess = () => resolve(q.result);
+      });
+      const bitmap = await createImageBitmap(asset.original);
+      sizes.push([bitmap.width, bitmap.height]);
+      bitmap.close();
+    }
+    db.close();
+    return sizes;
+  });
+  expect(dimensions[1]).toEqual(dimensions[0].map((value) => Math.round(value / 2)));
   await page.getByRole('button', { name: 'Review latest photo', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Original photo', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await next.click();
-  await expect(next).toBeDisabled();
-  await expect(page.getByRole('heading', { name: 'Item 2 · 0 photos', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Item 1 · 2 photos', exact: true })).toBeVisible();
-  await expect(page.locator('.capture-thumbnail img')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sort photos', exact: true })).toHaveCount(0);
+  await expect(zoomToggle).toHaveAttribute('aria-expanded', 'false');
   await page.screenshot({ path: 'artifacts/item-camera-mobile.png' });
   for (const viewport of [
     { width: 320, height: 568 },
@@ -313,7 +367,7 @@ test('simple live capture groups photos, undoes a split, saves on Done and never
     await page.setViewportSize(viewport);
     for (const control of [
       shutter,
-      next,
+      zoomToggle,
       page.getByRole('button', { name: 'Done', exact: true }),
     ]) {
       const box = await control.boundingBox();
@@ -326,40 +380,45 @@ test('simple live capture groups photos, undoes a split, saves on Done and never
     expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(
       true,
     );
+    await expect(zoom).toHaveCount(0);
     await page.screenshot({ path: `artifacts/item-camera-${viewport.width}.png` });
+    await zoomToggle.click();
+    const zoomBox = await zoom.boundingBox();
+    expect(zoomBox!.x).toBeGreaterThanOrEqual(0);
+    expect(zoomBox!.x + zoomBox!.width).toBeLessThanOrEqual(viewport.width);
+    expect(zoomBox!.y + zoomBox!.height).toBeLessThanOrEqual(viewport.height);
+    await zoomToggle.click();
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  // Exercise the video-frame fallback using a synthetic live stream.
   await page.evaluate(() => {
     (window as any).failStillCapture = true;
   });
   await shutter.click();
-  await expect(page.getByRole('heading', { name: 'Item 1 · 3 photos', exact: true })).toBeVisible();
+  await expect(page.locator('.capture-count')).toHaveText('3');
   await page.getByRole('button', { name: 'More camera options', exact: true }).click();
   await expect(page.getByText(/Live photos use video resolution/)).toBeVisible();
   await page.keyboard.press('Escape');
-  await next.click();
-  await shutter.click();
-  await expect(page.getByRole('heading', { name: 'Item 2 · 1 photo', exact: true })).toBeVisible();
-  await next.click();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
-  const state = await snapshot(page);
-  expect(state.items.map((i: any) => i.photos.length)).toEqual([3, 1]);
-  expect(state.items.every((i: any) => !i.reviewed)).toBe(true);
-  expect(state.rooms[0].unsortedPhotos).toEqual([]);
-  expect(state.rooms[0].roomPhotos).toEqual([]);
+  await expect(page.getByRole('heading', { name: 'Sort photos', exact: true })).toBeVisible();
   expect(
     await page.evaluate(() =>
       (window as any).cameraTracks.every((t: MediaStreamTrack) => t.readyState === 'ended'),
     ),
   ).toBe(true);
   await page.reload();
-  expect((await snapshot(page)).items).toHaveLength(2);
+  await expect(page.getByText('3 left to sort', { exact: true })).toBeVisible();
+  await makeItem(page, [1, 2]);
+  await makeItem(page, [1]);
+  const state = await snapshot(page);
+  expect(state.items.map((i: any) => i.photos.length)).toEqual([2, 1]);
+  expect(state.rooms[0].unsortedPhotos).toEqual([]);
+  expect(state.rooms[0].roomPhotos).toEqual([]);
+  await backToRoom(page);
   await addItems(page);
-  await expect(page.getByRole('heading', { name: 'Item 3 · 0 photos', exact: true })).toBeVisible();
+  await expect(page.locator('.capture-count')).toHaveCount(0);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   expect((await snapshot(page)).items).toHaveLength(2);
+  await page.getByRole('link', { name: 'Properties', exact: true }).click();
   await page.getByRole('button', { name: 'Start walkthrough camera', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Choose a room', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
@@ -367,7 +426,8 @@ test('simple live capture groups photos, undoes a split, saves on Done and never
     .getByRole('combobox', { name: 'Room', exact: true })
     .selectOption({ label: 'Bedroom 2' });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Bedroom 2', exact: true })).toBeVisible();
+  await expect(page.locator('.camera-title h1')).toHaveText('Bedroom 2');
+  await expect(page.getByRole('button', { name: 'Take item photo', exact: true })).toBeVisible();
 });
 
 test('capture failures do not create items; partial imports retain only saved photos and allow retry', async ({
@@ -391,8 +451,8 @@ test('capture failures do not create items; partial imports retain only saved ph
     .getByLabel('Phone camera photo', { exact: true })
     .setInputFiles(fixture('photo-1.jpg'));
   await expect(page.getByRole('alert')).toContainText('Storage is full');
-  await expect(page.getByRole('heading', { name: 'Item 1 · 0 photos', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Next item', exact: true })).toBeDisabled();
+  await expect(page.locator('.capture-count')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Next item', exact: true })).toHaveCount(0);
   expect((await snapshot(page)).items).toHaveLength(0);
   await page.evaluate(() => {
     (window as any).restorePut();
@@ -410,21 +470,22 @@ test('capture failures do not create items; partial imports retain only saved ph
   await expect(
     page.getByText('1 saved. Retry the remaining photos.', { exact: true }),
   ).toBeVisible();
-  expect((await snapshot(page)).items.map((i: any) => i.photos.length)).toEqual([1]);
+  expect((await snapshot(page)).rooms[0].unsortedPhotos).toHaveLength(1);
+  expect((await snapshot(page)).items).toHaveLength(0);
   await page.getByRole('button', { name: 'Dismiss error', exact: true }).click();
   await importPhotos(page, ['photo-2.jpg']);
-  await expect(page.getByRole('heading', { name: 'Item 1 · 2 photos', exact: true })).toBeVisible();
+  await expect(page.locator('.capture-count')).toHaveText('2');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.reload();
-  expect((await snapshot(page)).items.map((i: any) => i.photos.length)).toEqual([2]);
+  await expect(page.getByText('2 left to sort', { exact: true })).toBeVisible();
+  expect((await snapshot(page)).rooms[0].unsortedPhotos).toHaveLength(2);
+  expect((await snapshot(page)).items).toHaveLength(0);
 });
 
 test('existing unassigned photos still support grouping and undo', async ({ page }) => {
   await page.goto('./');
   await createRoom(page);
-  await page
-    .getByRole('button', { name: 'Add room overview shots The room as a whole', exact: true })
-    .click();
+  await page.getByRole('button', { name: 'Add overview shots', exact: true }).click();
   await importPhotos(page, ['photo-1.jpg', 'photo-2.jpg']);
   await page.screenshot({ path: 'artifacts/overview-camera-mobile.png' });
   await page.getByRole('button', { name: 'Done', exact: true }).click();
@@ -435,9 +496,7 @@ test('existing unassigned photos still support grouping and undo', async ({ page
       .click();
   }
   await page.getByRole('button', { name: /2 photos to sort/ }).click();
-  await page.getByRole('button', { name: 'Photo 1', exact: true }).click();
-  await page.getByRole('button', { name: 'Photo 2', exact: true }).click();
-  await page.getByRole('button', { name: 'Make item', exact: true }).click();
+  await makeItem(page, [1, 2]);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByText('2 left to sort', { exact: true })).toBeVisible();
   expect((await snapshot(page)).items).toHaveLength(0);

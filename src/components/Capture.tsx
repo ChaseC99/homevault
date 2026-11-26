@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ImageIcon, MoreHorizontal, X } from 'lucide-react';
-import { captureItemPhoto, type Inventory, type Room } from '../lib/model';
+import { ArrowRight, MoreHorizontal, X } from 'lucide-react';
+import { type Inventory, type Room } from '../lib/model';
 import { mutate, storageInfo } from '../lib/db';
-import { prepareAsset } from '../lib/media';
+import { imageBitmap, prepareAsset } from '../lib/media';
 import { Back, Button, Field, FilePicker, Photo, PhotoViewer, Camera, go } from './shared';
 import type { Run } from './Setup';
 
 type StillCapture = { takePhoto: () => Promise<Blob> };
-type Group = { itemId?: string; number: number; photos: string[] };
 
-export function CaptureSetup({ data }: { data: Inventory }) {
-  const [propertyId, setPropertyId] = useState(data.properties[0]?.id ?? '');
+export function CaptureSetup({
+  data,
+  initialProperty,
+}: {
+  data: Inventory;
+  initialProperty?: string;
+}) {
+  const initial = data.properties.find((p) => p.id === initialProperty);
+  const [propertyId, setPropertyId] = useState(initial?.id ?? data.properties[0]?.id ?? '');
   const [roomId, setRoomId] = useState('');
   const rooms = data.rooms.filter((r) => r.propertyId === propertyId);
   return (
     <>
-      <Back to="/">Properties</Back>
+      <Back to={initial ? `/property/${initial.id}` : '/'}>{initial?.name ?? 'Properties'}</Back>
       <header>
         <h1>Choose a room</h1>
         <p>Where are you taking photos?</p>
@@ -50,7 +56,7 @@ export function CaptureSetup({ data }: { data: Inventory }) {
           </Field>
         )}
         {rooms.length ? (
-          <Button disabled={!roomId} onClick={() => go(`/room/${roomId}`)}>
+          <Button disabled={!roomId} onClick={() => go(`/capture/${roomId}`)}>
             Continue <ArrowRight size={18} />
           </Button>
         ) : (
@@ -63,22 +69,7 @@ export function CaptureSetup({ data }: { data: Inventory }) {
   );
 }
 
-export function Capture({
-  data,
-  room,
-  overview,
-  run,
-}: {
-  data: Inventory;
-  room: Room;
-  overview: boolean;
-  run: Run;
-}) {
-  const [group, setGroup] = useState<Group>(() => ({
-    number: data.items.filter((i) => i.roomId === room.id).length + 1,
-    photos: [],
-  }));
-  const [undoGroup, setUndoGroup] = useState<Group>();
+export function Capture({ room, overview, run }: { room: Room; overview: boolean; run: Run }) {
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
   const [camera, setCamera] = useState(false);
@@ -88,8 +79,16 @@ export function Capture({
   const [notice, setNotice] = useState<{ text: string; failed?: boolean }>();
   const [options, setOptions] = useState(false);
   const [viewer, setViewer] = useState('');
-  const [overviewPhotos, setOverviewPhotos] = useState(room.roomPhotos);
+  const [photos, setPhotos] = useState(overview ? room.roomPhotos : room.unsortedPhotos);
+  const [zoom, setZoom] = useState(1);
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const [zoomRange, setZoomRange] = useState({ min: 1, max: 4, step: 0.1 });
+  const [hardwareZoom, setHardwareZoom] = useState(false);
+  const [zooming, setZooming] = useState(false);
+  const zoomLock = useRef(false);
   const video = useRef<HTMLVideoElement>(null);
+  const viewfinder = useRef<HTMLDivElement>(null);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const nativeInput = useRef<HTMLInputElement>(null);
   const optionsDialog = useRef<HTMLDialogElement>(null);
   const stream = useRef<MediaStream | undefined>(undefined);
@@ -97,7 +96,6 @@ export function Capture({
   const alive = useRef(true);
   const locked = useRef(false);
   const requestId = useRef(0);
-  const photos = overview ? overviewPhotos : group.photos;
   const latest = photos.at(-1);
 
   function stop() {
@@ -106,6 +104,7 @@ export function Capture({
     stream.current = undefined;
     still.current = undefined;
     setCamera(false);
+    setZoomOpen(false);
     setOpening(false);
   }
 
@@ -129,6 +128,14 @@ export function Capture({
         return;
       }
       stream.current = s;
+      const track = s.getVideoTracks()[0];
+      const capabilities = track.getCapabilities?.() as MediaTrackCapabilities & {
+        zoom?: { min: number; max: number; step: number };
+      };
+      const range = capabilities?.zoom;
+      setHardwareZoom(!!range && range.max > range.min);
+      setZoomRange(range && range.max > range.min ? range : { min: 1, max: 4, step: 0.1 });
+      setZoom((track.getSettings() as MediaTrackSettings & { zoom?: number }).zoom ?? 1);
       const C = (
         window as unknown as { ImageCapture?: new (track: MediaStreamTrack) => StillCapture }
       ).ImageCapture;
@@ -192,19 +199,34 @@ export function Capture({
     return () => clearTimeout(timer);
   }, [notice]);
   useEffect(() => {
-    if (!undoGroup) return;
-    const timer = setTimeout(() => setUndoGroup(undefined), 6500);
-    return () => clearTimeout(timer);
-  }, [undoGroup]);
+    const element = viewfinder.current;
+    if (!element || !camera) return;
+    const sizePreview = () => {
+      const v = video.current;
+      if (!v?.videoWidth || !v.videoHeight) return;
+      const scale = Math.min(
+        element.clientWidth / v.videoWidth,
+        element.clientHeight / v.videoHeight,
+      );
+      setPreviewSize({ width: v.videoWidth * scale, height: v.videoHeight * scale });
+    };
+    const observer = new ResizeObserver(sizePreview);
+    observer.observe(element);
+    video.current?.addEventListener('resize', sizePreview);
+    sizePreview();
+    return () => {
+      observer.disconnect();
+      video.current?.removeEventListener('resize', sizePreview);
+    };
+  }, [camera]);
   useEffect(() => {
     if (options) optionsDialog.current?.showModal();
     else optionsDialog.current?.close();
   }, [options]);
 
   // The lock spans preparation and persistence, so repeated taps cannot split
-  // an in-flight capture or create parallel groups from stale React state.
+  // an in-flight capture or duplicate a saved photo.
   async function save(files: Blob[], names?: string[]) {
-    let current = group;
     let saved = 0;
     setNotice(undefined);
     const ok = await run(async () => {
@@ -215,24 +237,17 @@ export function Capture({
         );
         if (asset.type === 'application/pdf')
           throw Error('Choose photos here. PDFs belong with receipts.');
-        let itemId = current.itemId;
         const committed = await mutate(
           (d) => {
-            if (overview) {
-              const target = d.rooms.find((r) => r.id === room.id);
-              if (!target) throw Error('Room no longer exists.');
-              target.roomPhotos.push(asset.id);
-            } else itemId = captureItemPhoto(d, room.id, asset.id, current.itemId);
+            const target = d.rooms.find((r) => r.id === room.id);
+            if (!target) throw Error('Room no longer exists.');
+            (overview ? target.roomPhotos : target.unsortedPhotos).push(asset.id);
           },
           [asset],
         );
         saved++;
-        if (overview) setOverviewPhotos(committed.rooms.find((r) => r.id === room.id)!.roomPhotos);
-        else {
-          current = { ...current, itemId, photos: [...current.photos, asset.id] };
-          setGroup(current);
-          setUndoGroup(undefined);
-        }
+        const target = committed.rooms.find((r) => r.id === room.id)!;
+        setPhotos(overview ? target.roomPhotos : target.unsortedPhotos);
       }
     });
     setNotice({
@@ -260,7 +275,7 @@ export function Capture({
   }
 
   async function shoot() {
-    if (locked.current) return;
+    if (locked.current || zoomLock.current) return;
     if (cameraError) {
       nativeInput.current?.click();
       return;
@@ -269,6 +284,7 @@ export function Capture({
       void start();
       return;
     }
+    setZoomOpen(false);
     locked.current = true;
     setBusy(true);
     try {
@@ -296,6 +312,38 @@ export function Capture({
           ),
         );
       }
+      if (!hardwareZoom && zoom > 1) {
+        const image = await imageBitmap(blob);
+        try {
+          const width = 'naturalWidth' in image ? image.naturalWidth : image.width;
+          const height = 'naturalHeight' in image ? image.naturalHeight : image.height;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(width / zoom));
+          canvas.height = Math.max(1, Math.round(height / zoom));
+          canvas
+            .getContext('2d')!
+            .drawImage(
+              image,
+              (width - width / zoom) / 2,
+              (height - height / zoom) / 2,
+              width / zoom,
+              height / zoom,
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            );
+          blob = await new Promise<Blob>((resolve, reject) =>
+            canvas.toBlob(
+              (b) => (b ? resolve(b) : reject(Error('Could not zoom photo.'))),
+              'image/jpeg',
+              0.95,
+            ),
+          );
+        } finally {
+          if ('close' in image) image.close();
+        }
+      }
       await save([blob]);
     } catch (e) {
       await run(async () => {
@@ -307,20 +355,42 @@ export function Capture({
     }
   }
 
-  function nextItem() {
-    if (locked.current || !group.photos.length) return;
-    setUndoGroup(group);
-    setGroup({ number: group.number + 1, photos: [] });
-    setNotice(undefined);
+  async function changeZoom(value: number) {
+    if (locked.current || zoomLock.current) return;
+    zoomLock.current = true;
+    setZooming(true);
+    try {
+      if (hardwareZoom) {
+        const track = stream.current?.getVideoTracks()[0];
+        if (!track) return;
+        await track.applyConstraints({ advanced: [{ zoom: value } as MediaTrackConstraintSet] });
+      }
+      setZoom(value);
+    } catch {
+      setNotice({
+        text: 'Could not change zoom. Try again or use your phone camera.',
+        failed: true,
+      });
+    } finally {
+      zoomLock.current = false;
+      setZooming(false);
+    }
   }
 
   return (
     <div className="camera-screen">
       <div className="camera-top">
-        <Button kind="ghost" disabled={busy} onClick={() => go(`/room/${room.id}`)}>
+        <Button
+          kind="ghost"
+          disabled={busy}
+          onClick={() => go(overview || !photos.length ? `/room/${room.id}` : `/sort/${room.id}`)}
+        >
           Done
         </Button>
-        <strong title={room.name}>{room.name}</strong>
+        <div className="camera-title">
+          <h1 title={room.name}>{room.name}</h1>
+          {overview && <span>Room overview</span>}
+        </div>
         <button
           className="camera-more"
           aria-label="More camera options"
@@ -331,16 +401,20 @@ export function Capture({
           <MoreHorizontal size={24} />
         </button>
       </div>
-      <div className="capture-context" aria-live="polite" aria-atomic="true">
-        <span className="capture-label">{overview ? 'ROOM OVERVIEW' : 'ITEM PHOTOS'}</span>
-        <h1>
-          {overview
-            ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}`
-            : `Item ${group.number} · ${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}`}
-        </h1>
-      </div>
-      <div className="viewfinder">
-        <video ref={video} muted playsInline autoPlay aria-label="Live camera preview" />
+      <div className="viewfinder" ref={viewfinder}>
+        <div
+          className="preview-frame"
+          style={previewSize.width ? previewSize : { width: '100%', height: '100%' }}
+        >
+          <video
+            ref={video}
+            muted
+            playsInline
+            autoPlay
+            aria-label="Live camera preview"
+            style={{ transform: !hardwareZoom ? `scale(${zoom})` : undefined }}
+          />
+        </div>
         {!camera && (
           <div className="camera-prompt">
             <Camera size={36} strokeWidth={1.3} />
@@ -357,68 +431,86 @@ export function Capture({
             )}
           </div>
         )}
-        {storageWarning && (
-          <p className="camera-warning" role="alert">
-            {storageWarning}
-          </p>
+        <div className="camera-notices">
+          {storageWarning && (
+            <p className="camera-warning" role="alert">
+              {storageWarning}
+            </p>
+          )}
+          <div
+            className={`capture-feedback ${notice?.failed ? '' : 'sr-only'}`}
+            role="status"
+            aria-live="polite"
+          >
+            {busy ? 'Saving…' : notice?.text}
+          </div>
+        </div>
+        {camera && (
+          <div
+            className="camera-zoom-controls"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setZoomOpen(false);
+            }}
+          >
+            {zoomOpen && (
+              <div className="camera-zoom-panel" id="camera-zoom-panel">
+                <input
+                  aria-label="Camera zoom"
+                  type="range"
+                  min={zoomRange.min}
+                  max={zoomRange.max}
+                  step={zoomRange.step || 0.1}
+                  value={zoom}
+                  disabled={busy || zooming}
+                  onChange={(event) => void changeZoom(Number(event.target.value))}
+                />
+              </div>
+            )}
+            <button
+              className="zoom-toggle"
+              aria-label="Adjust zoom"
+              aria-expanded={zoomOpen}
+              aria-controls="camera-zoom-panel"
+              disabled={busy || zooming}
+              onClick={() => setZoomOpen(!zoomOpen)}
+            >
+              {Number(zoom.toFixed(1))}×
+            </button>
+          </div>
         )}
       </div>
       <div className="capture-bottom">
-        <div className="capture-feedback" role="status" aria-live="polite">
-          {busy ? (
-            'Saving…'
-          ) : undoGroup ? (
-            <>
-              <span>New item started</span>
-              <button
-                onClick={() => {
-                  if (locked.current) return;
-                  setGroup(undoGroup);
-                  setUndoGroup(undefined);
-                }}
-              >
-                Undo
-              </button>
-            </>
-          ) : (
-            notice?.text
-          )}
-        </div>
         <div className="capture-controls">
           <div className="capture-thumbnail">
-            {latest ? (
-              <Photo id={latest} alt="Review latest photo" onClick={() => setViewer(latest)} />
-            ) : (
-              <span className="empty-thumbnail" aria-hidden="true">
-                <ImageIcon size={23} />
-              </span>
+            {latest && (
+              <>
+                <Photo
+                  id={latest}
+                  alt="Review latest photo"
+                  onClick={() => {
+                    setZoomOpen(false);
+                    setViewer(latest);
+                  }}
+                />
+                <span
+                  className="capture-count"
+                  aria-label={`${photos.length} ${overview ? 'overview photos' : 'photos to sort'}`}
+                >
+                  {photos.length}
+                </span>
+              </>
             )}
           </div>
           <button
             className={`shutter ${busy ? 'saving' : ''}`}
             aria-label={overview ? 'Take room photo' : 'Take item photo'}
-            disabled={busy || opening}
+            disabled={busy || opening || zooming}
             onClick={shoot}
           >
             <span />
           </button>
-          {overview ? (
-            <span />
-          ) : (
-            <button
-              className="next-item"
-              disabled={busy || !group.photos.length}
-              onClick={nextItem}
-            >
-              Next item <ArrowRight size={16} />
-            </button>
-          )}
+          <span aria-hidden="true" />
         </div>
-        <p className="capture-tip">
-          {overview
-            ? 'Capture the whole room.'
-            : 'Same item? Keep shooting. New item? Tap Next item.'}
-        </p>
       </div>
       <input
         ref={nativeInput}

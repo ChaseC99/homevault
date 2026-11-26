@@ -5,13 +5,13 @@ import {
   newRoom,
   newItem,
   groupPhotos,
-  captureItemPhoto,
   stats,
   parsePrice,
   itemTotal,
   validateItem,
+  title,
 } from '../src/lib/model';
-import { parseReceipt } from '../src/lib/receipt-parser';
+import { parseReceipt, parseSerialNumber } from '../src/lib/receipt-parser';
 import { mutate, loadInventory, getAsset } from '../src/lib/db';
 globalThis.window = new EventTarget() as unknown as Window & typeof globalThis;
 describe('inventory invariants', () => {
@@ -59,22 +59,35 @@ describe('inventory invariants', () => {
   });
   it('never marks an empty property ready', () =>
     expect(stats(emptyInventory()).ready).toBe(false));
-  it('captures consecutive photos into an item without adding overview or unsorted photos', () => {
+  it('keeps unnamed group numbers stable within each room and prefers an entered name', () => {
     const d = emptyInventory();
-    const room = newRoom('p', 'Office', []);
-    d.rooms.push(room);
-    const first = captureItemPhoto(d, room.id, 'front');
-    captureItemPhoto(d, room.id, 'label', first);
-    captureItemPhoto(d, room.id, 'next');
-    expect(d.items.map((i) => i.photos)).toEqual([['front', 'label'], ['next']]);
-    expect(d.items.every((i) => !i.reviewed && i.unitPriceCents === null)).toBe(true);
-    expect(room.unsortedPhotos).toEqual([]);
-    expect(room.roomPhotos).toEqual([]);
-    const other = newRoom('p', 'Kitchen', d.rooms);
-    d.rooms.push(other);
-    expect(() => captureItemPhoto(d, other.id, 'wrong-room', first)).toThrow();
-    expect(() => captureItemPhoto(d, 'missing-room', 'photo')).toThrow();
-    expect(d.items[0].photos).toEqual(['front', 'label']);
+    const room = newRoom('p', 'Kitchen', []);
+    const other = newRoom('p', 'Office', [room]);
+    d.rooms = [room, other];
+    room.unsortedPhotos = ['a', 'b', 'c'];
+    other.unsortedPhotos = ['d'];
+    groupPhotos(d, room.id, ['a']);
+    groupPhotos(d, room.id, ['b']);
+    expect(d.items.map(title)).toEqual(['Item 1', 'Item 2']);
+    d.items.shift();
+    groupPhotos(d, room.id, ['c']);
+    groupPhotos(d, other.id, ['d']);
+    expect(d.items.map(title)).toEqual(['Item 2', 'Item 3', 'Item 1']);
+    d.items[0].name = '  Sofa  ';
+    expect(title(d.items[0])).toBe('Sofa');
+    expect(title(newItem(room.id, []))).toBe('Untitled item');
+  });
+  it('rejects grouping into an item in another room without losing photos', () => {
+    const d = emptyInventory();
+    const a = newRoom('p', 'Office', []),
+      b = newRoom('p', 'Kitchen', [a]);
+    d.rooms.push(a, b);
+    a.unsortedPhotos = ['photo'];
+    const item = newItem(b.id, ['existing']);
+    d.items.push(item);
+    expect(() => groupPhotos(d, a.id, ['photo'], item.id)).toThrow();
+    expect(a.unsortedPhotos).toEqual(['photo']);
+    expect(item.photos).toEqual(['existing']);
   });
   it('rejects invalid money and quantities; preserves unknown vs zero', () => {
     expect(parsePrice('')).toBe(null);
@@ -99,6 +112,32 @@ describe('receipt interpretation', () => {
     expect(parseReceipt('02/31/2024\nSUBTOTAL 5.00\nTAX 0.30')).not.toHaveProperty('date');
     expect(parseReceipt('')).toEqual({ store: undefined });
     expect(parseReceipt('SHOP\nSUBTOTAL 5.00')).not.toHaveProperty('amount');
+  });
+});
+describe('receipt OCR variations', () => {
+  it.each([
+    ['Date: 11 . 21 . 2026', '2026-11-21'],
+    ['PURCHASE DATE: 11 / 2I / 2O26', '2026-11-21'],
+    ['November 21, 2026', '2026-11-21'],
+    ['21-Nov-26', '2026-11-21'],
+    ['2026-11-21', '2026-11-21'],
+    ['02/29/2024', '2024-02-29'],
+  ])('reads %s', (text, expected) => expect(parseReceipt(text).date).toBe(expected));
+  it.each(['02/29/2025', '11/31/2026', '13/21/2026', '00/12/2026', '02/31/2026'])(
+    'leaves impossible date %s blank',
+    (text) => expect(parseReceipt(text).date).toBeUndefined(),
+  );
+  it('removes edge noise without damaging ordinary merchant names', () => {
+    expect(parseReceipt('& i | - NAME nr em— a\n11/21/2026').store).toBe('NAME');
+    expect(parseReceipt('*** OAK HOME STORE ***\n11/21/2026').store).toBe('OAK HOME STORE');
+    expect(parseReceipt('Bed Bath & Beyond\n11/21/2026').store).toBe('Bed Bath & Beyond');
+    expect(parseReceipt("Macy's\n11/21/2026").store).toBe("Macy's");
+    expect(parseReceipt('TOTAL $50.00').store).toBeUndefined();
+  });
+  it('finds a labelled serial without guessing between unrelated numbers', () => {
+    expect(parseSerialNumber('MODEL X1000\nS/N: AB-2026-001')).toBe('AB-2026-001');
+    expect(parseSerialNumber('Serial Number: XY900012')).toBe('XY900012');
+    expect(parseSerialNumber('MODEL X1000\nSKU 938472')).toBeUndefined();
   });
 });
 describe('atomic persistence', () => {

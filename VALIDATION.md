@@ -1,8 +1,25 @@
 # Prototype validation — November 26, 2026
 
-The implementation is complete for the agreed PWA prototype scope. Original handoff files remain unchanged. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
+The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
-## Completed checks
+## Feedback revision checks
+
+The feedback revision passes **25 unit/integration tests**, the strict TypeScript/production build, and **16 Chromium browser scenarios** (`npm test`, `npm run build`, `npm run test:e2e`). The browser suite uses synthetic images, serial labels, coordinates, and camera streams in an isolated profile.
+
+- The room page matches the updated empty and populated references: overview cover header, compact thumbnail strip with a cover marker and add tile, combined sorting/details card, and compact item rows. Cover changes survive reload, room renaming updates the camera label, and back navigation remains visible at 320 px while scrolling.
+- Camera navigation is checked with two properties: the property shortcut preselects the correct property across reload; switching property clears the room; Continue opens capture directly; and a room shortcut opens its own camera. Home omits the count/status line, and blank addresses are omitted. Offline status remains available in Settings.
+- Add-property omits insurance fields, offers browser address autofill and local GPS capture, and preserves manual address entry after location permission is denied. GPS is stored separately, survives reload, and can be removed. No geocoding service or API key is used.
+- At 320 × 568, walkthrough dates do not overlap; the top navigation remains visible while scrolling; pending rooms remain in the bottom tray and can be removed before saving. Stale success messages clear on navigation so they do not obscure the tray.
+- Item capture saves to the room’s unsorted photos immediately. Done opens sorting; item records appear only after grouping. Reload, partial import failures, duplicate shutter taps, grouping/undo, and separate overview photos are covered.
+- Grouping opens a naming sheet with the selected thumbnails, Create item, and Name later. Named groups and numbered unnamed groups display a thumbnail, name, and photo count. Add name updates a skipped group without leaving sorting. Tests verify cancellation preserves selection, duplicate taps create only one record, quota errors preserve the name draft and original photos for retry, and appending/undo preserves names, capture order, and review status. Names and group counts survive reload. The sheet and group cards were inspected at 320 px; actual phone keyboard behavior still needs hardware verification.
+- The camera now has one Done action, a room title, shutter, and thumbnail count. The large count heading, duplicate sorting button, and instruction footer are removed; routine save messages are announced to screen readers while failures remain visible. Compact zoom controls fit at 320 × 568 and 844 × 390; their slider is collapsed by default, expands on demand, and collapses after capture without resetting zoom. A synthetic camera confirms digital 2× zoom produces a saved crop with half the original width and height. Camera tracks stop on exit. Browser-exposed hardware zoom still requires physical-device verification.
+- Category suggestions include the six presets and saved custom values. Photo removal and Undo preserve photo order; removal and custom categories survive save/reload.
+- A synthetic serial label passes through the real bundled OCR engine and the review/apply step. Receipt OCR still reads the sample image and two-page PDF offline. Parsing covers additional date formats, impossible dates, and merchant edge noise. Quantity one has no divide action.
+- Receipt images and PDFs preview inside the app, including navigating to the second PDF page. Missing item fields display a dash. Offline report export and deployment-path asset checks still pass, without external application requests in the full offline workflow.
+
+Additional screenshots: `artifacts/room-reference-empty.png`, `artifacts/room-reference-populated.png`, `artifacts/setup-dates-320.png`, `artifacts/pending-rooms-320.png`, `artifacts/sort-name-mobile.png`, `artifacts/sort-name-320.png`, `artifacts/sort-groups-320.png`, and the refreshed camera/item screenshots below. The source receipt that prompted the OCR feedback was not provided; its exact output has not been retested. Real phone camera quality, browser autofill behavior, and permission UX remain hardware checks.
+
+## Earlier prototype checks (before this revision)
 
 - **Production build:** TypeScript strict checking and Vite build pass. The generated service worker caches every runtime asset, including OCR workers/model, PDF tools and fonts. No runtime CDN or cloud service is used.
 - **Unit/integration tests: 11 passed.** Per-unit money/quantity, unknown vs zero price, readiness with unassigned photos, room numbering, grouping order, direct item capture and room isolation, receipt parsing, original-blob persistence, transaction rollback and simultaneous writes.
@@ -19,7 +36,7 @@ The implementation is complete for the agreed PWA prototype scope. Original hand
 - **PDF verification:** generated an eight-page US-letter report with cover image, organizer/client/insurance information, room and item pages, unassigned-photo warning, an image receipt and both pages of the PDF receipt. Text extraction verifies names, notes, serial number, $380 unit price and $760 total; $1,520 is absent. Every page is 612 × 792 points, and text bounds stay within the page margins. Poppler and MuPDF renders were inspected. Full font embedding fixes the missing-glyph issue discovered during visual review.
 - **Dependency audit:** zero known vulnerabilities after updating the PDF reader to its patched release.
 
-## GitHub Pages readiness
+## Earlier GitHub Pages readiness
 
 - Built with `BASE_PATH=/homevault/` and passed all **11 unit/integration tests** and **8 Chromium browser scenarios** in an isolated copy, including offline image/PDF OCR and report export. The separate copy prevented concurrent local builds from replacing the deployment-path build during tests.
 - Built with the default `/` base and passed the installation/offline deployment scenario there as well.
@@ -40,6 +57,6 @@ The implementation is complete for the agreed PWA prototype scope. Original hand
 
 Real iPhone/Android installation, native share-sheet behavior, permission prompts, lens choice, autofocus, full-sensor photo resolution and serial-number readability still need hands-on hardware testing, as agreed. The in-app browser's file-chooser automation stalled; the isolated browser suite completed the file-import, OCR, PDF and offline checks without that dependency.
 
-Offline behavior was verified in Chromium after a completed first load. Actual browser storage remains device- and browser-managed; persistence requests cannot guarantee protection from uninstall, clear-site-data, device loss or every eviction scenario. Very large inventories and complex PDFs have not been stress-tested on phone hardware. OCR uses English and numeric US/ISO date conventions and always needs human review.
+Offline behavior was verified in Chromium after a completed first load. Actual browser storage remains device- and browser-managed; persistence requests cannot guarantee protection from uninstall, clear-site-data, device loss or every eviction scenario. Very large inventories and complex PDFs have not been stress-tested on phone hardware. OCR uses English with US numeric, ISO, and English month-name dates and always needs human review.
 
 The report contains real recorded fields from the test inputs, including partial data. It is not a guarantee of insurer acceptance or a backup/restore format. No cloud backup, sync, permanent-delete interface or client portal is included.

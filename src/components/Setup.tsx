@@ -2,7 +2,8 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { type Inventory, type Property, type Room, id, newRoom, roomTypes } from '../lib/model';
 import { mutate, requestPersistence, storageInfo } from '../lib/db';
 import { prepareAsset } from '../lib/media';
-import { Back, Button, Field, FilePicker, Photo, Plus, X, go } from './shared';
+import { LocateFixed } from 'lucide-react';
+import { Back, Button, Camera, Field, FilePicker, Photo, Plus, X, go } from './shared';
 export type Run = (work: () => Promise<unknown>, message?: string) => Promise<boolean>;
 export function PropertyForm({
   data,
@@ -33,7 +34,35 @@ export function PropertyForm({
   );
   const [cover, setCover] = useState<File>();
   const [busy, setBusy] = useState(false);
-  const fields = (keys: [keyof Property, string, string?][]) =>
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  async function locate() {
+    setLocating(true);
+    setLocationError('');
+    try {
+      if (!navigator.geolocation)
+        throw Error('Location is unavailable in this browser. You can enter the address manually.');
+      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 60000,
+        }),
+      );
+      const { latitude, longitude, accuracy } = position.coords;
+      setForm((f) => ({ ...f, location: { latitude, longitude, accuracy } }));
+    } catch (error) {
+      const code = (error as GeolocationPositionError).code;
+      setLocationError(
+        code === 1
+          ? 'Location permission is off. Allow location in your browser or enter the address manually.'
+          : 'Could not find your location. Try again or enter the address manually.',
+      );
+    } finally {
+      setLocating(false);
+    }
+  }
+  const fields = (keys: [Exclude<keyof Property, 'location'>, string, string?][]) =>
     keys.map(([key, label, type]) => (
       <Field key={key} label={label}>
         <input
@@ -89,14 +118,36 @@ export function PropertyForm({
           {fields([['name', 'Property name']])}
           <Field label="Street, city, state and ZIP">
             <textarea
+              name="street-address"
+              autoComplete="street-address"
               value={form.address}
               maxLength={600}
               rows={3}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
             />
           </Field>
+          <Button kind="secondary" disabled={locating || busy} onClick={locate}>
+            <LocateFixed size={18} />
+            {locating ? 'Finding location…' : 'Add current location'}
+          </Button>
+          <small>
+            Save your GPS location on this device. Enter or autofill the street address above.
+          </small>
+          {locationError && <p role="alert">{locationError}</p>}
+          {form.location && (
+            <div className="location-summary" role="status">
+              <small>
+                GPS: {form.location.latitude.toFixed(5)}, {form.location.longitude.toFixed(5)} ·
+                accuracy about {Math.round(form.location.accuracy)} m
+              </small>
+              <Button kind="text" onClick={() => setForm((f) => ({ ...f, location: undefined }))}>
+                Remove location
+              </Button>
+            </div>
+          )}
           {form.coverPhoto && <Photo id={form.coverPhoto} className="cover small" />}
           <FilePicker
+            icon={<Camera size={18} />}
             label={cover ? `Selected: ${cover.name}` : 'Choose exterior photo'}
             onFiles={(f) => setCover(f[0])}
           />
@@ -109,25 +160,27 @@ export function PropertyForm({
             ['clientEmail', 'Email', 'email'],
           ])}
         </section>
-        <section className="card form-card">
-          <h2>Insurance</h2>
-          {fields([
-            ['insurer', 'Insurer'],
-            ['policyNumber', 'Policy number'],
-            ['agentName', 'Agent name'],
-            ['agentPhone', 'Agent phone', 'tel'],
-          ])}
-        </section>
+        {property && (
+          <section className="card form-card">
+            <h2>Insurance</h2>
+            {fields([
+              ['insurer', 'Insurer'],
+              ['policyNumber', 'Policy number'],
+              ['agentName', 'Agent name'],
+              ['agentPhone', 'Agent phone', 'tel'],
+            ])}
+          </section>
+        )}
         <section className="card form-card">
           <h2>Walkthrough dates</h2>
-          <div className="fields two">
+          <div className="fields two date-fields">
             {fields([
               ['walkthroughStartDate', 'Started', 'date'],
               ['walkthroughEndDate', 'Finished', 'date'],
             ])}
           </div>
         </section>
-        <Button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy || locating}>
           {busy ? 'Saving…' : 'Save property'}
         </Button>
         <small>{data.properties.length} properties currently on this device</small>
@@ -193,27 +246,27 @@ export function AddRooms({
           Add
         </Button>
       </form>
-      <section className="stack">
-        <h2>Adding to {property.name}</h2>
-        <div className="chips">
-          {added.length ? (
-            added.map((r) => (
-              <span className="chip" key={r.id}>
-                {r.name}
-                <button
-                  aria-label={`Remove ${r.name}`}
-                  onClick={() => setAdded(added.filter((x) => x.id !== r.id))}
-                >
-                  <X size={16} />
-                </button>
-              </span>
-            ))
-          ) : (
-            <p>No rooms selected yet.</p>
-          )}
-        </div>
-      </section>
-      <div className="sticky-action">
+      <div className="sticky-action room-selection">
+        <section className="stack" aria-label="Pending rooms">
+          <h2>Adding to {property.name}</h2>
+          <div className="chips pending-rooms" aria-live="polite">
+            {added.length ? (
+              added.map((r) => (
+                <span className="chip" key={r.id}>
+                  {r.name}
+                  <button
+                    aria-label={`Remove ${r.name}`}
+                    onClick={() => setAdded(added.filter((x) => x.id !== r.id))}
+                  >
+                    <X size={16} />
+                  </button>
+                </span>
+              ))
+            ) : (
+              <p>No rooms selected yet.</p>
+            )}
+          </div>
+        </section>
         <Button
           disabled={!added.length || busy}
           onClick={async () => {

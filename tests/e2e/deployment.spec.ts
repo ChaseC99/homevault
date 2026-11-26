@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForOffline } from './helpers';
 
 test('installation assets and offline navigation stay inside the deployment path', async ({
   page,
@@ -28,7 +29,7 @@ test('installation assets and offline navigation stay inside the deployment path
     { oldCache, otherCache },
   );
   await page.goto('./');
-  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible({ timeout: 90000 });
+  await waitForOffline(page);
 
   const manifestURL = await page
     .locator('link[rel="manifest"]')

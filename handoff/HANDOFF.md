@@ -19,7 +19,7 @@ A mobile app for a **professional home organizer**. The organizer visits client 
 | Receipts are read automatically | When a receipt is scanned, extract **price, date, store** on-device (OCR) and pre-fill the fields. The organizer reviews/corrects. |
 | Client gets the PDF only | No client accounts, logins or sharing portal. |
 | No replacement cost | Do not collect or show replacement cost anywhere. The insurer handles it. Report shows purchase prices only. |
-| Shoot now, sort later | The walkthrough camera does no naming or grouping. Photos are sorted into items afterwards (see §5). |
+| Shoot now, sort later | The camera does no naming or grouping. Photos are sorted into items afterwards (see §5). |
 
 ## 3. Platform
 
@@ -42,7 +42,7 @@ Property
   address               (street, city, state, ZIP)
   insurer, policyNumber
   agentName, agentPhone
-  walkthroughStartDate, walkthroughEndDate
+  inventoryStartDate, inventoryEndDate
   createdAt, updatedAt
   └── Room (many, ordered)
         id
@@ -51,6 +51,7 @@ Property
                          Office, Family Room, Laundry, Garage, Basement, Closet,
                          Patio / Yard, Custom)
         roomPhotos[]    (wide overview shots, ordered)
+        coverPhotoId    (optional; defaults to roomPhotos[0], shown as the room header)
         unsortedPhotos[] (item photos not yet assigned to an item, in capture order)
         └── Item (many, created during Sort)
               id
@@ -77,7 +78,7 @@ Derived values (compute, don't store): item counts, "needs details" counts, room
 ## 5. Core workflow
 
 1. **Set up** — create a property (cover photo + client/insurance info), add rooms.
-2. **Walkthrough (in the home, fast, no typing)** — for each room: take room photos (wide shots), then switch to item photos and shoot everything. No naming, no grouping.
+2. **Capture (in the home, fast, no typing)** — in each room: add room overview photos and add items (shoot everything). No naming, no grouping. There is no separate "walkthrough" mode; the app only talks about *room overview* and *items*.
 3. **Sort (later, anywhere)** — in each room, tap the unsorted photos that show the same thing → "Make item". Repeat until no unsorted photos remain. New items start as `needsDetails`.
 4. **Details session (with the client and their receipts)** — go through the room's `needsDetails` items one at a time. Scan the receipt → price/date/store are pre-filled → fill brand, model/serial, quantity, condition → "Save & next item". Item becomes `complete`.
 5. **Report** — generate the PDF for a property and share it.
@@ -90,7 +91,7 @@ Mockups are in `screens/` in this order. Sample names, prices and dates in them 
 - Header: "Properties", count of active clients, a **"Works offline"** badge, **New property** button.
 - Search field (client name or address).
 - One card per property: large exterior cover photo, property name, total purchase value, address · room count · item count, and a status badge ("12 need details", or "Report ready" when nothing is outstanding).
-- Bottom tab bar: **Properties** · center **camera** button (opens walkthrough camera) · **Reports**.
+- Bottom tab bar: **Properties** · center **camera** button (opens the camera) · **Reports**.
 
 ### 02 · Property
 - Full-bleed exterior cover photo with Back and **Retake** buttons on top.
@@ -103,7 +104,7 @@ Mockups are in `screens/` in this order. Sample names, prices and dates in them 
 - "Or name your own" text field for custom rooms.
 - List of rooms being added (removable chips). Primary button "Add N rooms".
 
-### 04 · Walkthrough camera
+### 04 · Camera
 - Full-screen camera. Top: Done, current room picker, "On phone" indicator.
 - Big shutter. Below it a two-way switch: **Room · N** / **Items · N** (counts of photos taken in each mode).
 - Strip of recent thumbnails. Hint text: room mode "Wide shots of the whole room"; items mode "Shoot every item. Sort them later."
@@ -114,12 +115,25 @@ Mockups are in `screens/` in this order. Sample names, prices and dates in them 
 - Bottom bar: "N photos selected" + **Make item** (disabled when nothing selected). Creating an item removes those photos from the unsorted grid and shows the new item as a chip ("Item 1 · 3 photos").
 - "N left to sort" counter.
 
-### 06 · Room
-- Back to property, **Capture** button (opens camera for this room).
-- Room name, item count and running total.
-- Room photos strip (4 thumbnails).
-- Two action cards: **"23 photos to sort" → Sort** and **"5 items need details" → Start** (details session). Hide each when its count is 0.
-- Items list, needs-details first, with a badge; complete items show brand/receipt status and price.
+### 06 · Room (`06-room.html` populated, `06a-room-empty.html` empty)
+Goal: the items list gets most of the screen. No large capture cards on this page — the camera already has the Room / Items switch.
+
+**Populated**
+- **Cover header (~196 pt):** the room's first overview photo, full-bleed, with a dark gradient. On top: back to property (left), **•••** menu (Rename, Change cover, Delete). Bottom-left: room name + "18 items · $9,870 documented" in white.
+- **Overview strip:** "Overview · N", one row of 56 pt thumbnails (the cover one ringed in accent and labelled "Cover"), ending in a dashed **+** tile that opens the camera in Room mode. Stays one row tall; scrolls sideways if needed.
+- **To-do card:** slim 46 pt rows — "23 photos to sort → Sort" and "5 items need details → Start" (details session). Hide each row when its count is 0; hide the card when both are 0.
+- **Items list:** needs-details first, with a badge; complete items show brand/receipt status and price.
+- **Tab bar:** the center camera button is labelled with the room name and opens the camera for this room (Items mode, or Room mode if there are no overview shots yet).
+
+**Empty (no photos yet)** — same layout as populated, so nothing jumps when the first photo arrives:
+- Cover header area with a blank placeholder (`placeholder` bg, dashed bottom edge, faint camera icon); dark text: back, •••, room name, "No photos yet".
+- Overview strip: "Overview · 0" and the + tile only (opens camera in Room mode).
+- No to-do card.
+- Items: dashed empty card, "No items yet" + **Add items** button (opens camera in Items mode).
+- Same tab bar.
+- Keep copy minimal: short labels, no instructional sentences.
+
+Cover rule: `Room.coverPhoto` defaults to `roomPhotos[0]`; the organizer can pick another via ••• → Change cover.
 
 ### 07 · Details session
 - Header: Exit, room name, "Item 1 of 5 needing details", Skip. Progress bar.
@@ -171,7 +185,7 @@ Cloud sync/backup, client logins, replacement-cost estimates, client grouping, m
 
 1. Data model + local persistence + photo file storage.
 2. Properties → Property → Add rooms.
-3. Walkthrough camera (room/items modes).
+3. Camera (room overview / items modes).
 4. Sort photos → items.
 5. Details session + item record + receipt scan with on-device OCR.
 6. PDF generation + share.

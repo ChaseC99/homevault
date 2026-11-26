@@ -1,7 +1,7 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import { assetUrl } from './asset-url';
 GlobalWorkerOptions.workerSrc = assetUrl('pdf.worker.min.mjs');
-export async function* renderPdfPages(blob: Blob) {
+export async function* renderPdfPages(blob: Blob, onlyPage?: number) {
   const task = getDocument({
     data: new Uint8Array(await blob.arrayBuffer()),
     cMapUrl: assetUrl('pdf-cmaps/'),
@@ -11,7 +11,7 @@ export async function* renderPdfPages(blob: Blob) {
   });
   const doc = await task.promise;
   try {
-    for (let number = 1; number <= doc.numPages; number++) {
+    for (let number = onlyPage ?? 1; number <= (onlyPage ?? doc.numPages); number++) {
       const page = await doc.getPage(number);
       const view = page.getViewport({ scale: 1 });
       const scale = Math.min(2, 2200 / Math.max(view.width, view.height));

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Settings2,
   Search,
@@ -6,7 +6,7 @@ import {
   LayoutGrid,
   ArrowUpRight,
   CheckCircle2,
-  FolderOpen,
+  MoreHorizontal,
 } from 'lucide-react';
 import { loadInventory, mutate, errorMessage } from './lib/db';
 import { type Inventory, type Property, type Room, stats, money, title } from './lib/model';
@@ -24,6 +24,7 @@ import {
   Empty,
   Photo,
   PhotoViewer,
+  PageActions,
   FilePicker,
   Camera,
   House,
@@ -45,7 +46,7 @@ function Status({ s }: { s: ReturnType<typeof stats> }) {
     </Badge>
   );
 }
-function Properties({ data, offline }: { data: Inventory; offline: string }) {
+function Properties({ data }: { data: Inventory }) {
   const [search, setSearch] = useState('');
   const properties = data.properties.filter((p) =>
     [p.name, p.address, p.clientName].join(' ').toLowerCase().includes(search.toLowerCase()),
@@ -56,12 +57,6 @@ function Properties({ data, offline }: { data: Inventory; offline: string }) {
         <div>
           <div className="eyebrow">A LITTLE ORDER. A LOT OF PEACE OF MIND.</div>
           <h1>Properties</h1>
-          <div className="header-meta">
-            <span>
-              {data.properties.length} {data.properties.length === 1 ? 'property' : 'properties'}
-            </span>
-            <Badge>{offline}</Badge>
-          </div>
         </div>
         <Button onClick={() => go('/new')}>
           <Plus size={18} />
@@ -146,7 +141,7 @@ function Properties({ data, offline }: { data: Inventory; offline: string }) {
                     <h2>{p.name}</h2>
                     <strong className="money">{money(s.total)}</strong>
                   </div>
-                  <p>{p.address || 'Address not recorded'}</p>
+                  {p.address && <p>{p.address}</p>}
                   <div className="row">
                     <small>
                       {s.rooms.length} rooms · {s.items.length} items
@@ -170,7 +165,7 @@ function PropertyView({ data, property, run }: { data: Inventory; property: Prop
     <>
       <Back to="/">Properties</Back>
       <div className="property-cover">
-        <Photo id={property.coverPhoto} className="cover" />
+        <Photo id={property.coverPhoto} className="cover" placeholder={null} />
         {!property.coverPhoto && (
           <span className="cover-label">
             <House size={44} />
@@ -198,13 +193,22 @@ function PropertyView({ data, property, run }: { data: Inventory; property: Prop
       <header className="row align-start">
         <div>
           <h1>{property.name}</h1>
-          <p>
-            {property.address || 'Address not recorded'}
-            {property.policyNumber ? ' · Policy on file' : ''}
-          </p>
+          {(property.address || property.policyNumber) && (
+            <p>
+              {[property.address, property.policyNumber ? 'Policy on file' : '']
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
+          {property.location && (
+            <small>
+              GPS: {property.location.latitude.toFixed(5)}, {property.location.longitude.toFixed(5)}{' '}
+              · ±{Math.round(property.location.accuracy)} m
+            </small>
+          )}
         </div>
         <Button kind="text" onClick={() => go(`/edit-property/${property.id}`)}>
-          Info
+          Edit
         </Button>
       </header>
       <div className="stats">
@@ -271,29 +275,166 @@ function PropertyView({ data, property, run }: { data: Inventory; property: Prop
   );
 }
 function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }) {
-  const property = data.properties.find((p) => p.id === room.propertyId)!,
-    s = stats(data, property.id, room.id),
-    [viewer, setViewer] = useState(''),
-    [renaming, setRenaming] = useState(false),
-    [name, setName] = useState(room.name);
+  const property = data.properties.find((p) => p.id === room.propertyId)!;
+  const s = stats(data, property.id, room.id);
+  const [viewer, setViewer] = useState('');
+  const [options, setOptions] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(room.name);
+  const [busy, setBusy] = useState(false);
+  const optionsDialog = useRef<HTMLDialogElement>(null);
+  const cover = room.roomPhotos[0];
+  const hasPhotos =
+    room.roomPhotos.length +
+      s.unsorted +
+      s.items.reduce((count, item) => count + item.photos.length, 0) >
+    0;
+  useEffect(() => {
+    if (options) optionsDialog.current?.showModal();
+    else optionsDialog.current?.close();
+  }, [options]);
+  function closeOptions() {
+    setOptions(false);
+    setRenaming(false);
+  }
   return (
     <>
-      <div className="row">
-        <Back to={`/property/${property.id}`}>{property.name}</Back>
-      </div>
-      <header>
-        <div className="row">
+      <Back to={`/property/${property.id}`}>{property.name}</Back>
+      <PageActions>
+        <button
+          className="room-options-button"
+          aria-label="Room options"
+          aria-haspopup="dialog"
+          onClick={() => {
+            setName(room.name);
+            setOptions(true);
+          }}
+        >
+          <MoreHorizontal size={22} />
+        </button>
+      </PageActions>
+      <header className={`room-hero ${cover ? 'has-cover' : ''}`}>
+        {cover && <Photo id={cover} full className="room-cover" alt={`${room.name} cover`} />}
+        <div className="room-heading">
           <h1>{room.name}</h1>
-          <Button kind="text" onClick={() => setRenaming(!renaming)}>
-            Rename
-          </Button>
+          <p>
+            {!hasPhotos && !s.items.length
+              ? 'No photos yet'
+              : `${s.items.length} ${s.items.length === 1 ? 'item' : 'items'} · ${money(s.total)} documented`}
+          </p>
         </div>
-        {renaming && (
+      </header>
+      <div className="room-content">
+        <section className="room-overview" aria-label="Room overview">
+          <h2>Overview · {room.roomPhotos.length}</h2>
+          <div className="photo-strip overview-strip">
+            {room.roomPhotos.map((photo, index) => (
+              <div className={`overview-thumbnail ${index === 0 ? 'is-cover' : ''}`} key={photo}>
+                <Photo
+                  id={photo}
+                  alt={`Overview photo ${index + 1}`}
+                  onClick={() => setViewer(photo)}
+                />
+                {index === 0 && <span className="cover-badge">Cover</span>}
+              </div>
+            ))}
+            <button
+              className="overview-add"
+              aria-label="Add overview shots"
+              onClick={() => go(`/capture/${room.id}?overview`)}
+            >
+              <Plus size={20} />
+            </button>
+          </div>
+        </section>
+        {(s.unsorted > 0 || s.needs > 0) && (
+          <div className="card room-tasks">
+            {s.unsorted > 0 && (
+              <button onClick={() => go(`/sort/${room.id}`)}>
+                <LayoutGrid size={18} />
+                <strong className="grow">
+                  {s.unsorted} {s.unsorted === 1 ? 'photo' : 'photos'} to sort
+                </strong>
+                <span>Sort</span>
+                <ChevronRight size={18} />
+              </button>
+            )}
+            {s.needs > 0 && (
+              <button
+                className="needs-details"
+                onClick={() => go(`/details/${s.items.find((item) => !item.reviewed)!.id}?session`)}
+              >
+                <FileText size={18} />
+                <strong className="grow">
+                  {s.needs} {s.needs === 1 ? 'item needs' : 'items need'} details
+                </strong>
+                <span>Start</span>
+                <ChevronRight size={18} />
+              </button>
+            )}
+          </div>
+        )}
+        <div className="section-head room-items-heading">
+          <h2>Items</h2>
+          {s.items.length > 0 && <small>Needs details first</small>}
+        </div>
+        {s.items.length ? (
+          <div className="card list room-items">
+            {[...s.items]
+              .sort((a, b) => Number(a.reviewed) - Number(b.reviewed))
+              .map((item) => (
+                <button className="list-row" key={item.id} onClick={() => go(`/item/${item.id}`)}>
+                  <Photo id={item.photos[0]} />
+                  <span className="grow">
+                    <strong>{title(item)}</strong>
+                    <small>
+                      {item.photos.length} {item.photos.length === 1 ? 'photo' : 'photos'}
+                    </small>
+                  </span>
+                  {item.reviewed ? (
+                    <strong className="money">
+                      {item.unitPriceCents === null
+                        ? '—'
+                        : money(item.unitPriceCents * item.quantity)}
+                    </strong>
+                  ) : (
+                    <Badge warn>Needs details</Badge>
+                  )}
+                </button>
+              ))}
+          </div>
+        ) : (
+          <div className="empty room-empty">
+            <h3>No items yet</h3>
+            <Button onClick={() => go(`/capture/${room.id}`)}>
+              <Camera size={18} /> Add items
+            </Button>
+          </div>
+        )}
+      </div>
+      <dialog
+        ref={optionsDialog}
+        className="room-options-dialog"
+        aria-label="Room options"
+        onCancel={closeOptions}
+      >
+        <div className="row">
+          <h2>{renaming ? 'Rename room' : 'Room options'}</h2>
+          <button
+            className="room-options-button"
+            aria-label="Close room options"
+            onClick={closeOptions}
+          >
+            <X size={20} />
+          </button>
+        </div>
+        {renaming ? (
           <form
-            className="inline-form"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!name.trim()) return;
+            className="stack"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!name.trim() || busy) return;
+              setBusy(true);
               const ok = await run(
                 () =>
                   mutate((d) => {
@@ -301,126 +442,37 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
                   }),
                 'Room renamed',
               );
-              if (ok) setRenaming(false);
+              setBusy(false);
+              if (ok) closeOptions();
             }}
           >
-            <input
-              aria-label="Room name"
-              maxLength={100}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Button type="submit">Save</Button>
+            <label className="field">
+              Room name
+              <input
+                value={name}
+                maxLength={100}
+                onChange={(event) => setName(event.target.value)}
+                required
+              />
+            </label>
+            <Button type="submit" disabled={busy || !name.trim()}>
+              Save
+            </Button>
           </form>
-        )}
-        <p>
-          {s.items.length} items · {money(s.total)} documented
-        </p>
-      </header>
-      <div className="room-capture-actions">
-        <button className="room-capture-action" onClick={() => go(`/capture/${room.id}?overview`)}>
-          <House size={25} />
-          <span>
-            <strong>Add room overview shots</strong>
-            <small>The room as a whole</small>
-          </span>
-          <ChevronRight size={19} />
-        </button>
-        <button className="room-capture-action primary" onClick={() => go(`/capture/${room.id}`)}>
-          <Camera size={25} />
-          <span>
-            <strong>Add items</strong>
-            <small>One item, a few angles</small>
-          </span>
-          <ChevronRight size={19} />
-        </button>
-      </div>
-      <div>
-        <div className="section-head">
-          <h2>Room overview</h2>
-          <small>
-            {room.roomPhotos.length} {room.roomPhotos.length === 1 ? 'photo' : 'photos'}
-          </small>
-        </div>
-        {room.roomPhotos.length ? (
-          <div className="photo-strip large">
-            {room.roomPhotos.map((p, n) => (
-              <Photo key={p} id={p} alt={`Overview photo ${n + 1}`} onClick={() => setViewer(p)} />
-            ))}
-          </div>
         ) : (
-          <p className="room-overview-empty">No overview shots yet.</p>
+          <div className="stack">
+            <Button kind="secondary" onClick={() => setRenaming(true)}>
+              Rename room
+            </Button>
+            <Button kind="secondary" onClick={() => go(`/capture/${room.id}?overview`)}>
+              Add overview shots
+            </Button>
+            <Button kind="secondary" onClick={() => go(`/capture/${room.id}`)}>
+              Add items
+            </Button>
+          </div>
         )}
-      </div>
-      {s.unsorted > 0 && (
-        <button className="action-card" onClick={() => go(`/sort/${room.id}`)}>
-          <LayoutGrid size={24} />
-          <span className="grow">
-            <strong>{s.unsorted} photos to sort</strong>
-            <small>Group photos of the same item</small>
-          </span>
-          <strong>Sort</strong>
-        </button>
-      )}
-      {s.needs > 0 && (
-        <button
-          className="action-card warn"
-          onClick={() => go(`/details/${s.items.find((i) => !i.reviewed)!.id}?session`)}
-        >
-          <FileText size={24} />
-          <span className="grow">
-            <strong>{s.needs} items need details</strong>
-            <small>Receipts, prices, and the client’s knowledge</small>
-          </span>
-          <strong>Start</strong>
-        </button>
-      )}
-      <div className="section-head">
-        <h2>Items</h2>
-        <small>Needs details first</small>
-      </div>
-      {s.items.length ? (
-        <div className="card list">
-          {[...s.items]
-            .sort((a, b) => Number(a.reviewed) - Number(b.reviewed))
-            .map((i) => (
-              <button className="list-row" key={i.id} onClick={() => go(`/item/${i.id}`)}>
-                <Photo id={i.photos[0]} />
-                <span className="grow">
-                  <strong>{title(i)}</strong>
-                  <small>
-                    {i.reviewed
-                      ? [i.brand, i.receipts.length ? 'Receipt attached' : 'No receipt']
-                          .filter(Boolean)
-                          .join(' · ')
-                      : `${i.photos.length} photos`}
-                  </small>
-                </span>
-                {i.reviewed ? (
-                  <strong className="money">
-                    {i.unitPriceCents === null ? '—' : money(i.unitPriceCents * i.quantity)}
-                  </strong>
-                ) : (
-                  <Badge warn>Needs details</Badge>
-                )}
-              </button>
-            ))}
-        </div>
-      ) : (
-        <Empty
-          icon={<FolderOpen size={32} />}
-          title={s.unsorted ? 'Ready to put it together.' : 'No items yet.'}
-          action={
-            s.unsorted ? (
-              <Button onClick={() => go(`/sort/${room.id}`)}>Sort photos</Button>
-            ) : undefined
-          }
-        >
-          {s.unsorted
-            ? 'Group your photos to create the first item.'
-            : 'Tap Add items to photograph each item. Fill in the details later.'}
-        </Empty>
-      )}
+      </dialog>
       {viewer && (
         <div className="modal" role="dialog" aria-modal="true" aria-label="Room overview photo">
           <Button kind="secondary" onClick={() => setViewer('')}>
@@ -429,12 +481,29 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
           </Button>
           <Photo id={viewer} full className="original" />
           <Button
+            disabled={viewer === cover}
             onClick={() =>
               run(async () => {
                 await mutate((d) => {
-                  const r = d.rooms.find((r) => r.id === room.id)!;
-                  r.roomPhotos = r.roomPhotos.filter((p) => p !== viewer);
-                  r.unsortedPhotos.push(viewer);
+                  const target = d.rooms.find((r) => r.id === room.id)!;
+                  target.roomPhotos = [
+                    viewer,
+                    ...target.roomPhotos.filter((photo) => photo !== viewer),
+                  ];
+                });
+                setViewer('');
+              }, 'Room cover changed')
+            }
+          >
+            {viewer === cover ? 'Current cover' : 'Make room cover'}
+          </Button>
+          <Button
+            onClick={() =>
+              run(async () => {
+                await mutate((d) => {
+                  const target = d.rooms.find((r) => r.id === room.id)!;
+                  target.roomPhotos = target.roomPhotos.filter((photo) => photo !== viewer);
+                  target.unsortedPhotos.push(viewer);
                 });
                 setViewer('');
               }, 'Moved to item photos')
@@ -452,7 +521,8 @@ export default function App() {
     [route, setRoute] = useState(location.hash.slice(1) || '/'),
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
-    [offline, setOffline] = useState('Preparing offline…');
+    [offline, setOffline] = useState('Preparing offline…'),
+    [scrolled, setScrolled] = useState(window.scrollY > 8);
   const refresh = () =>
     loadInventory()
       .then(setData)
@@ -479,6 +549,7 @@ export default function App() {
     ready();
     const hash = () => {
       setRoute(location.hash.slice(1) || '/');
+      setToast('');
       window.scrollTo(0, 0);
     };
     window.addEventListener('hashchange', hash);
@@ -496,6 +567,11 @@ export default function App() {
       return () => clearTimeout(t);
     }
   }, [toast]);
+  useEffect(() => {
+    const update = () => setScrolled(window.scrollY > 8);
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, []);
   const run: Run = async (work, message) => {
     try {
       await work();
@@ -506,9 +582,10 @@ export default function App() {
       return false;
     }
   };
-  const [kind, keyWithQuery] = route.replace(/^\//, '').split('/'),
-    key = keyWithQuery?.split('?')[0],
-    session = route.includes('?session');
+  const [pathname, query = ''] = route.split('?');
+  const [kind, key] = pathname.replace(/^\//, '').split('/');
+  const params = new URLSearchParams(query);
+  const session = params.has('session');
   const p = data?.properties.find((p) => p.id === key),
     r = data?.rooms.find((r) => r.id === key),
     i = data?.items.find((i) => i.id === key);
@@ -521,18 +598,19 @@ export default function App() {
   else if (kind === 'rooms' && p) screen = <AddRooms data={data} property={p} run={run} />;
   else if (kind === 'room' && r) screen = <RoomView key={r.id} data={data} room={r} run={run} />;
   else if (kind === 'capture' && r)
+    screen = <Capture key={route} room={r} overview={params.has('overview')} run={run} />;
+  else if (kind === 'capture' && !key)
     screen = (
-      <Capture key={route} data={data} room={r} overview={route.includes('?overview')} run={run} />
+      <CaptureSetup key={route} data={data} initialProperty={params.get('property') ?? undefined} />
     );
-  else if (kind === 'capture' && !key) screen = <CaptureSetup data={data} />;
-  else if (kind === 'sort' && r) screen = <Sort data={data} room={r} run={run} />;
+  else if (kind === 'sort' && r) screen = <Sort key={r.id} data={data} room={r} run={run} />;
   else if (kind === 'details' && i)
     screen = <Details key={i.id} data={data} item={i} run={run} session={session} />;
   else if (kind === 'item' && i) screen = <ItemRecord key={i.id} data={data} item={i} run={run} />;
   else if (kind === 'reports') screen = <Reports data={data} initialProperty={key} run={run} />;
   else if (kind === 'settings')
     screen = <Settings data={data} run={run} offline={offline} retryOffline={ready} />;
-  else if (!kind) screen = <Properties data={data} offline={offline} />;
+  else if (!kind) screen = <Properties data={data} />;
   else
     screen = (
       <Empty
@@ -544,25 +622,38 @@ export default function App() {
     );
   const immersive = ['capture', 'details', 'sort', 'rooms', 'new', 'edit-property'].includes(kind);
   const cameraScreen = kind === 'capture' && !!r;
+  const roomScreen = kind === 'room' && !!r;
+  const cameraRoom = roomScreen ? r : undefined;
+  const cameraProperty = kind === 'property' ? p : undefined;
   return (
-    <div className={`app ${cameraScreen ? 'camera-app' : ''}`}>
+    <div className={`app ${cameraScreen ? 'camera-app' : ''} ${roomScreen ? 'room-app' : ''}`}>
       {!cameraScreen && (
-        <div className="brand-bar">
-          <a href="#/" aria-label="Jigsaw Homevault home">
-            <span className="brand-mark">
-              <House size={21} />
-            </span>
-            <span>
-              jigsaw<span className="brand-light"> / homevault</span>
-            </span>
-          </a>
-          <button aria-label="Organizer and device settings" onClick={() => go('/settings')}>
-            <Settings2 size={21} />
-          </button>
-        </div>
+        <nav
+          className={`brand-bar ${roomScreen ? `room-nav ${r.roomPhotos.length ? 'has-cover' : ''} ${scrolled ? 'is-scrolled' : ''}` : ''}`}
+          aria-label="Page navigation"
+        >
+          <div id="top-back" />
+          {roomScreen ? (
+            <div id="top-actions" />
+          ) : (
+            <>
+              <a href="#/" aria-label="Jigsaw Homevault home">
+                <span className="brand-mark">
+                  <House size={21} />
+                </span>
+                <span>
+                  jigsaw<span className="brand-light"> / homevault</span>
+                </span>
+              </a>
+              <button aria-label="Organizer and device settings" onClick={() => go('/settings')}>
+                <Settings2 size={21} />
+              </button>
+            </>
+          )}
+        </nav>
       )}
       <main
-        className={`${!kind ? 'home' : 'detail'} ${cameraScreen ? 'capture-main' : ''}`}
+        className={`${!kind ? 'home' : 'detail'} ${cameraScreen ? 'capture-main' : ''} ${roomScreen ? 'room-main' : ''}`}
         key={kind === 'capture' ? 'capture' : undefined}
       >
         {screen}
@@ -573,13 +664,30 @@ export default function App() {
             <House size={23} />
             <span>Properties</span>
           </a>
-          <button
-            className="nav-camera"
-            aria-label="Start walkthrough camera"
-            onClick={() => go('/capture')}
-          >
-            <Camera size={26} />
-          </button>
+          <div className="nav-camera-group">
+            <button
+              className="nav-camera"
+              aria-label={
+                cameraRoom
+                  ? `Take photos in ${cameraRoom.name}`
+                  : cameraProperty
+                    ? `Take photos at ${cameraProperty.name}`
+                    : 'Start walkthrough camera'
+              }
+              onClick={() =>
+                go(
+                  cameraRoom
+                    ? `/capture/${cameraRoom.id}`
+                    : cameraProperty
+                      ? `/capture?property=${cameraProperty.id}`
+                      : '/capture',
+                )
+              }
+            >
+              <Camera size={26} />
+            </button>
+            {cameraRoom && <span className="nav-camera-label">{cameraRoom.name}</span>}
+          </div>
           <a href="#/reports" aria-current={kind === 'reports' ? 'page' : undefined}>
             <FileText size={23} />
             <span>Reports</span>

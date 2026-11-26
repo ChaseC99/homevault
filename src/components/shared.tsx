@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { House, ChevronLeft, Plus, Camera, FileText, Check, ImageIcon, X } from 'lucide-react';
 import { getAsset } from '../lib/db';
 export { House, ChevronLeft, Plus, Camera, FileText, Check, X };
@@ -25,13 +26,37 @@ export function Button({
     </button>
   );
 }
-export function Back({ to, children = 'Back' }: { to: string; children?: ReactNode }) {
-  return (
-    <button className="back" onClick={() => go(to)}>
-      <ChevronLeft size={20} />
-      {children}
-    </button>
-  );
+export function Back({
+  to,
+  children = 'Back',
+  onClick,
+  disabled,
+}: {
+  to: string;
+  children?: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setTarget(document.getElementById('top-back'));
+  }, []);
+  return target
+    ? createPortal(
+        <button className="back" disabled={disabled} onClick={onClick ?? (() => go(to))}>
+          <ChevronLeft size={20} />
+          <span>{children}</span>
+        </button>,
+        target,
+      )
+    : null;
+}
+export function PageActions({ children }: { children: ReactNode }) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setTarget(document.getElementById('top-actions'));
+  }, []);
+  return target ? createPortal(children, target) : null;
 }
 export function Field({
   label,
@@ -76,12 +101,14 @@ export function Photo({
   full = false,
   className = '',
   onClick,
+  placeholder = <ImageIcon aria-hidden="true" size={28} />,
 }: {
   id?: string;
   alt?: string;
   full?: boolean;
   className?: string;
   onClick?: () => void;
+  placeholder?: ReactNode;
 }) {
   const [url, setUrl] = useState('');
   useEffect(() => {
@@ -105,7 +132,7 @@ export function Photo({
   const contents = url ? (
     <img src={url} alt={alt} loading={full ? 'eager' : 'lazy'} />
   ) : (
-    <ImageIcon aria-hidden="true" size={28} />
+    placeholder
   );
   return onClick ? (
     <button className={`photo ${className}`} onClick={onClick} aria-label={alt || 'View photo'}>
@@ -137,6 +164,8 @@ export function FilePicker({
   multiple = false,
   capture = false,
   disabled = false,
+  icon,
+  iconOnly = false,
 }: {
   label: string;
   onFiles: (files: File[]) => void;
@@ -144,10 +173,16 @@ export function FilePicker({
   multiple?: boolean;
   capture?: boolean;
   disabled?: boolean;
+  icon?: ReactNode;
+  iconOnly?: boolean;
 }) {
   return (
-    <label className={`button secondary file-picker ${disabled ? 'disabled' : ''}`}>
-      {label}
+    <label
+      title={label}
+      className={`button secondary file-picker ${iconOnly ? 'icon-only' : ''} ${disabled ? 'disabled' : ''}`}
+    >
+      {icon}
+      {!iconOnly && label}
       <input
         aria-label={label}
         type="file"

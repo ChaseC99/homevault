@@ -6,6 +6,7 @@ export interface Property {
   clientPhone: string;
   clientEmail: string;
   address: string;
+  location?: { latitude: number; longitude: number; accuracy: number };
   insurer: string;
   policyNumber: string;
   agentName: string;
@@ -40,6 +41,7 @@ export interface Item {
   photos: string[];
   name: string;
   category: string;
+  number?: number;
   brand: string;
   model: string;
   serialNumber: string;
@@ -132,7 +134,8 @@ export const money = (c: number | null) =>
   c === null
     ? 'Not recorded'
     : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(c / 100);
-export const title = (i: Item) => i.name || 'Untitled item';
+export const title = (i: Item) =>
+  i.name.trim() || (i.number ? `Item ${i.number}` : 'Untitled item');
 export function stats(data: Inventory, propertyId?: string, roomId?: string) {
   const rooms = data.rooms.filter(
     (r) => (!propertyId || r.propertyId === propertyId) && (!roomId || r.id === roomId),
@@ -166,26 +169,12 @@ export function groupPhotos(
   if (!item) throw Error('Item no longer exists.');
   item.photos.push(...photos);
   item.reviewed = false;
-  if (!existingId) data.items.push(item);
+  if (!existingId) {
+    const roomItems = data.items.filter((i) => i.roomId === roomId);
+    item.number = roomItems.reduce((max, i, index) => Math.max(max, i.number ?? index + 1), 0) + 1;
+    data.items.push(item);
+  }
   room.unsortedPhotos = room.unsortedPhotos.filter((p) => !photos.includes(p));
-  return item.id;
-}
-// Store the original photo in the same transaction as this mutation. A pending
-// camera group has no record until its first photo is successfully committed.
-export function captureItemPhoto(
-  data: Inventory,
-  roomId: string,
-  photoId: string,
-  existingId?: string,
-) {
-  if (!data.rooms.some((r) => r.id === roomId)) throw Error('Room no longer exists.');
-  const item = existingId
-    ? data.items.find((i) => i.id === existingId && i.roomId === roomId)
-    : newItem(roomId, []);
-  if (!item) throw Error('Item no longer exists.');
-  item.photos.push(photoId);
-  item.reviewed = false;
-  if (!existingId) data.items.push(item);
   return item.id;
 }
 export function parsePrice(value: string): number | null {
