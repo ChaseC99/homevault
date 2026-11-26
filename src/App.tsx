@@ -8,24 +8,23 @@ import {
   CheckCircle2,
   MoreHorizontal,
 } from 'lucide-react';
-import { loadInventory, mutate, errorMessage } from './lib/db';
+import { loadInventory, mutate, errorMessage, deleteRoom, deleteProperty } from './lib/db';
 import { type Inventory, type Property, type Room, stats, money, title } from './lib/model';
 import { checkOffline } from './lib/offline';
-import { prepareAsset } from './lib/media';
 import { PropertyForm, AddRooms, Settings, type Run } from './components/Setup';
 import { Capture, CaptureSetup } from './components/Capture';
 import { Sort } from './components/Sort';
 import { Details, ItemRecord } from './components/Details';
 import { Reports } from './components/Reports';
+import { DeleteConfirmation } from './components/DeleteConfirmation';
 import {
   Back,
   Button,
   Badge,
   Empty,
   Photo,
-  PhotoViewer,
+  usePhotoViewport,
   PageActions,
-  FilePicker,
   Camera,
   House,
   FileText,
@@ -159,11 +158,28 @@ function Properties({ data }: { data: Inventory }) {
     </>
   );
 }
-function PropertyView({ data, property, run }: { data: Inventory; property: Property; run: Run }) {
+function PropertyView({ data, property }: { data: Inventory; property: Property }) {
   const s = stats(data, property.id);
+  const [options, setOptions] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (options) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [options]);
   return (
     <>
       <Back to="/">Properties</Back>
+      <PageActions>
+        <button
+          className="options-button"
+          aria-label="Property options"
+          aria-haspopup="dialog"
+          onClick={() => setOptions(true)}
+        >
+          <MoreHorizontal size={22} />
+        </button>
+      </PageActions>
       <div className="property-cover">
         <Photo id={property.coverPhoto} className="cover" placeholder={null} />
         {!property.coverPhoto && (
@@ -172,34 +188,11 @@ function PropertyView({ data, property, run }: { data: Inventory; property: Prop
             Your exterior photo goes here
           </span>
         )}
-        <div className="cover-action">
-          <FilePicker
-            label={property.coverPhoto ? 'Change cover' : 'Add cover photo'}
-            onFiles={(f) =>
-              run(async () => {
-                if (!f[0]) return;
-                const a = await prepareAsset(f[0], f[0].name);
-                await mutate(
-                  (d) => {
-                    d.properties.find((p) => p.id === property.id)!.coverPhoto = a.id;
-                  },
-                  [a],
-                );
-              }, 'Cover photo saved')
-            }
-          />
-        </div>
       </div>
       <header className="row align-start">
         <div>
           <h1>{property.name}</h1>
-          {(property.address || property.policyNumber) && (
-            <p>
-              {[property.address, property.policyNumber ? 'Policy on file' : '']
-                .filter(Boolean)
-                .join(' · ')}
-            </p>
-          )}
+          {property.address && <p>{property.address}</p>}
           {property.location && (
             <small>
               GPS: {property.location.latitude.toFixed(5)}, {property.location.longitude.toFixed(5)}{' '}
@@ -271,6 +264,47 @@ function PropertyView({ data, property, run }: { data: Inventory; property: Prop
         Build inventory report
       </Button>
       <small>Totals include recorded per-unit purchase prices × quantity.</small>
+      <dialog
+        ref={dialog}
+        className="options-dialog"
+        aria-label="Property options"
+        onCancel={() => setOptions(false)}
+      >
+        <div className="row">
+          <h2>Property options</h2>
+          <button
+            className="options-button"
+            aria-label="Close property options"
+            onClick={() => setOptions(false)}
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="stack">
+          <Button kind="secondary" onClick={() => go(`/edit-property/${property.id}`)}>
+            Edit property
+          </Button>
+          <Button
+            kind="danger-text"
+            onClick={() => {
+              setOptions(false);
+              setDeleting(true);
+            }}
+          >
+            Delete property
+          </Button>
+        </div>
+      </dialog>
+      {deleting && (
+        <DeleteConfirmation
+          kind="property"
+          name={property.name}
+          contents={`, its ${s.rooms.length} ${s.rooms.length === 1 ? 'room' : 'rooms'}, ${s.items.length} ${s.items.length === 1 ? 'item' : 'items'}, photos, and receipts`}
+          onDelete={() => deleteProperty(property.id)}
+          onDeleted={() => go('/')}
+          onCancel={() => setDeleting(false)}
+        />
+      )}
     </>
   );
 }
@@ -280,6 +314,8 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
   const [viewer, setViewer] = useState('');
   const [options, setOptions] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  usePhotoViewport(!!viewer);
   const [name, setName] = useState(room.name);
   const [busy, setBusy] = useState(false);
   const optionsDialog = useRef<HTMLDialogElement>(null);
@@ -302,7 +338,7 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
       <Back to={`/property/${property.id}`}>{property.name}</Back>
       <PageActions>
         <button
-          className="room-options-button"
+          className="options-button"
           aria-label="Room options"
           aria-haspopup="dialog"
           onClick={() => {
@@ -374,57 +410,58 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
             )}
           </div>
         )}
-        <div className="section-head room-items-heading">
-          <h2>Items</h2>
-          {s.items.length > 0 && <small>Needs details first</small>}
-        </div>
-        {s.items.length ? (
-          <div className="card list room-items">
-            {[...s.items]
-              .sort((a, b) => Number(a.reviewed) - Number(b.reviewed))
-              .map((item) => (
-                <button className="list-row" key={item.id} onClick={() => go(`/item/${item.id}`)}>
-                  <Photo id={item.photos[0]} />
-                  <span className="grow">
-                    <strong>{title(item)}</strong>
-                    <small>
-                      {item.photos.length} {item.photos.length === 1 ? 'photo' : 'photos'}
-                    </small>
-                  </span>
-                  {item.reviewed ? (
-                    <strong className="money">
-                      {item.unitPriceCents === null
-                        ? '—'
-                        : money(item.unitPriceCents * item.quantity)}
-                    </strong>
-                  ) : (
-                    <Badge warn>Needs details</Badge>
-                  )}
-                </button>
-              ))}
-          </div>
-        ) : (
-          <div className="empty room-empty">
-            <h3>No items yet</h3>
-            <Button onClick={() => go(`/capture/${room.id}`)}>
-              <Camera size={18} /> Add items
+        <section className="room-inventory" aria-label="Room items">
+          <div className="section-head room-items-heading">
+            <h2>Items</h2>
+            <Button kind="soft" onClick={() => go(`/capture/${room.id}`)}>
+              <Plus size={18} />
+              Add items
             </Button>
           </div>
-        )}
+          {s.items.length ? (
+            <div className="card list room-items">
+              {[...s.items]
+                .sort((a, b) => Number(a.reviewed) - Number(b.reviewed))
+                .map((item) => (
+                  <button className="list-row" key={item.id} onClick={() => go(`/item/${item.id}`)}>
+                    <Photo id={item.photos[0]} />
+                    <span className="grow">
+                      <strong>{title(item)}</strong>
+                      <small>
+                        {item.photos.length} {item.photos.length === 1 ? 'photo' : 'photos'}
+                      </small>
+                    </span>
+                    {item.reviewed ? (
+                      <strong className="money">
+                        {item.unitPriceCents === null
+                          ? '—'
+                          : money(item.unitPriceCents * item.quantity)}
+                      </strong>
+                    ) : (
+                      <Badge warn>Needs details</Badge>
+                    )}
+                  </button>
+                ))}
+            </div>
+          ) : (
+            <div className="empty room-empty">
+              <h3>No items yet</h3>
+              <Button onClick={() => go(`/capture/${room.id}`)}>
+                <Camera size={18} /> Add items
+              </Button>
+            </div>
+          )}
+        </section>
       </div>
       <dialog
         ref={optionsDialog}
-        className="room-options-dialog"
+        className="options-dialog"
         aria-label="Room options"
         onCancel={closeOptions}
       >
         <div className="row">
           <h2>{renaming ? 'Rename room' : 'Room options'}</h2>
-          <button
-            className="room-options-button"
-            aria-label="Close room options"
-            onClick={closeOptions}
-          >
+          <button className="options-button" aria-label="Close room options" onClick={closeOptions}>
             <X size={20} />
           </button>
         </div>
@@ -470,9 +507,28 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
             <Button kind="secondary" onClick={() => go(`/capture/${room.id}`)}>
               Add items
             </Button>
+            <Button
+              kind="danger-text"
+              onClick={() => {
+                closeOptions();
+                setDeleting(true);
+              }}
+            >
+              Delete room
+            </Button>
           </div>
         )}
       </dialog>
+      {deleting && (
+        <DeleteConfirmation
+          kind="room"
+          name={room.name}
+          contents={`, its ${s.items.length} ${s.items.length === 1 ? 'item' : 'items'}, photos, and receipts`}
+          onDelete={() => deleteRoom(room.id)}
+          onDeleted={() => go(`/property/${property.id}`)}
+          onCancel={() => setDeleting(false)}
+        />
+      )}
       {viewer && (
         <div className="modal" role="dialog" aria-modal="true" aria-label="Room overview photo">
           <Button kind="secondary" onClick={() => setViewer('')}>
@@ -550,6 +606,7 @@ export default function App() {
     const hash = () => {
       setRoute(location.hash.slice(1) || '/');
       setToast('');
+      setScrolled(false);
       window.scrollTo(0, 0);
     };
     window.addEventListener('hashchange', hash);
@@ -594,7 +651,7 @@ export default function App() {
     screen = <Empty title="Opening your Homevault…">Loading records from this device.</Empty>;
   else if (kind === 'new' || (kind === 'edit-property' && p))
     screen = <PropertyForm key={key ?? 'new'} data={data} property={p} run={run} />;
-  else if (kind === 'property' && p) screen = <PropertyView data={data} property={p} run={run} />;
+  else if (kind === 'property' && p) screen = <PropertyView key={p.id} data={data} property={p} />;
   else if (kind === 'rooms' && p) screen = <AddRooms data={data} property={p} run={run} />;
   else if (kind === 'room' && r) screen = <RoomView key={r.id} data={data} room={r} run={run} />;
   else if (kind === 'capture' && r)
@@ -645,9 +702,13 @@ export default function App() {
                   jigsaw<span className="brand-light"> / homevault</span>
                 </span>
               </a>
-              <button aria-label="Organizer and device settings" onClick={() => go('/settings')}>
-                <Settings2 size={21} />
-              </button>
+              {kind === 'property' && p ? (
+                <div id="top-actions" />
+              ) : (
+                <button aria-label="Organizer and device settings" onClick={() => go('/settings')}>
+                  <Settings2 size={21} />
+                </button>
+              )}
             </>
           )}
         </nav>

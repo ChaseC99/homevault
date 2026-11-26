@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { House, ChevronLeft, Plus, Camera, FileText, Check, ImageIcon, X } from 'lucide-react';
 import { getAsset } from '../lib/db';
@@ -143,6 +143,7 @@ export function Photo({
   );
 }
 export function PhotoViewer({ id, onClose }: { id: string; onClose: () => void }) {
+  usePhotoViewport(true);
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label="Original photo">
       <div className="modal-head">
@@ -156,6 +157,30 @@ export function PhotoViewer({ id, onClose }: { id: string; onClose: () => void }
       <p>Original resolution is kept on this device.</p>
     </div>
   );
+}
+// Keep fullscreen photos from scrolling the page underneath or leaving dark browser chrome behind.
+export function usePhotoViewport(open: boolean) {
+  useLayoutEffect(() => {
+    if (!open) return;
+    const body = document.body;
+    const theme = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    const previousTheme = theme?.content;
+    const scrollY = window.scrollY;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+    };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    if (theme) theme.content = '#10140f';
+    return () => {
+      Object.assign(body.style, previous);
+      if (theme) theme.content = previousTheme ?? '#ffffff';
+      window.scrollTo(0, scrollY);
+    };
+  }, [open]);
 }
 export function FilePicker({
   label,

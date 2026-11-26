@@ -2,6 +2,19 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## Layout and deletion revision
+
+Verified the isolated commit contents with **28 unit/integration tests**, the production build, and **20 Chromium scenarios**. Two targeted WebKit scenarios pass for mobile date layout/persistence and contextual navigation.
+
+- Property setup and editing omit insurance. The property cover picker lives in Edit property, and saved covers survive reload.
+- Date inputs stay inside the card padding at 320, 390, 540, and 768 px. WebKit with a mobile viewport also verifies the date layout, persistence, and contextual camera navigation. Native date-picker interaction still needs a physical phone check.
+- Room overview, tasks, Items, and hero text share the same page gutters. Related property, setup, item, sorting, and report pages are checked for horizontal overflow at 320 px. Items has an Add items action; the explanatory sorting label is removed.
+- Fullscreen photo viewers lock the underlying page, restore its scroll position, and restore the white browser theme on close. The regular and scrolled navigation bars use opaque white backgrounds.
+- Property and room menus offer Delete with a confirmation naming the record and its contents. Tests cover Cancel/Escape, rollback after a failed save, deletion across reload, child records and photo/receipt cleanup, preservation of other properties, and preservation of shared assets.
+- The local Playwright WebKit build rejects Blob/File writes to IndexedDB, including direct fixture writes independent of the app. This blocks its photo-storage scenarios; Chromium covers those flows. This is separate from the passing WebKit date and navigation checks. Physical Safari photo storage remains unverified in this revision.
+
+Screenshots: `artifacts/edit-dates-contained.png`, `artifacts/room-spacing-mobile.png`, and `artifacts/delete-property-confirmation.png`.
+
 ## Feedback revision checks
 
 The feedback revision passes **25 unit/integration tests**, the strict TypeScript/production build, and **16 Chromium browser scenarios** (`npm test`, `npm run build`, `npm run test:e2e`). The browser suite uses synthetic images, serial labels, coordinates, and camera streams in an isolated profile.

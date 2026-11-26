@@ -148,7 +148,13 @@ export function PropertyForm({
           {form.coverPhoto && <Photo id={form.coverPhoto} className="cover small" />}
           <FilePicker
             icon={<Camera size={18} />}
-            label={cover ? `Selected: ${cover.name}` : 'Choose exterior photo'}
+            label={
+              cover
+                ? `Selected: ${cover.name}`
+                : form.coverPhoto
+                  ? 'Change cover photo'
+                  : 'Choose exterior photo'
+            }
             onFiles={(f) => setCover(f[0])}
           />
         </section>
@@ -160,17 +166,6 @@ export function PropertyForm({
             ['clientEmail', 'Email', 'email'],
           ])}
         </section>
-        {property && (
-          <section className="card form-card">
-            <h2>Insurance</h2>
-            {fields([
-              ['insurer', 'Insurer'],
-              ['policyNumber', 'Policy number'],
-              ['agentName', 'Agent name'],
-              ['agentPhone', 'Agent phone', 'tel'],
-            ])}
-          </section>
-        )}
         <section className="card form-card">
           <h2>Walkthrough dates</h2>
           <div className="fields two date-fields">

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getAsset, errorMessage } from '../lib/db';
 import { renderPdfPages } from '../lib/pdf-input';
 import { downloadBlob } from '../lib/media';
-import { Button, X } from './shared';
+import { Button, X, usePhotoViewport } from './shared';
 
 export function ReceiptPreview({ assetId, label }: { assetId: string; label: string }) {
   const [page, setPage] = useState(1),
@@ -10,6 +10,7 @@ export function ReceiptPreview({ assetId, label }: { assetId: string; label: str
   const [url, setUrl] = useState(''),
     [error, setError] = useState('');
   const [expanded, setExpanded] = useState(false);
+  usePhotoViewport(expanded);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     let active = true,

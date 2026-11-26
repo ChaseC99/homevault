@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import {
   emptyInventory,
@@ -10,9 +10,10 @@ import {
   itemTotal,
   validateItem,
   title,
+  type Property,
 } from '../src/lib/model';
 import { parseReceipt, parseSerialNumber } from '../src/lib/receipt-parser';
-import { mutate, loadInventory, getAsset } from '../src/lib/db';
+import { mutate, loadInventory, getAsset, deleteRoom, deleteProperty } from '../src/lib/db';
 globalThis.window = new EventTarget() as unknown as Window & typeof globalThis;
 describe('inventory invariants', () => {
   it('prices each unit exactly once, includes draft values and excludes unknowns', () => {
@@ -179,5 +180,114 @@ describe('atomic persistence', () => {
       mutate((d) => d.rooms.push(newRoom('p', 'Office', d.rooms))),
     ]);
     expect((await loadInventory()).rooms.map((r) => r.name)).toEqual(['Office', 'Office 2']);
+  });
+});
+
+describe('room and property deletion', () => {
+  async function seed() {
+    const property = (id: string): Property => ({
+      id,
+      name: id,
+      coverPhoto: `${id}-cover`,
+      address: '',
+      clientName: '',
+      clientPhone: '',
+      clientEmail: '',
+      insurer: '',
+      policyNumber: '',
+      agentName: '',
+      agentPhone: '',
+      walkthroughStartDate: '',
+      walkthroughEndDate: '',
+      createdAt: '',
+      updatedAt: '',
+    });
+    const data = emptyInventory();
+    data.properties = [property('delete'), property('keep')];
+    const room = newRoom('delete', 'Kitchen', []),
+      sibling = newRoom('delete', 'Office', []),
+      other = newRoom('keep', 'Bedroom', []);
+    room.roomPhotos = ['overview', 'shared'];
+    room.unsortedPhotos = ['unsorted'];
+    other.roomPhotos = ['shared'];
+    data.rooms = [room, sibling, other];
+    const item = newItem(room.id, ['item-photo']);
+    item.receipts = [{ id: 'receipt', assetId: 'receipt-file', status: 'read', text: '' }];
+    data.items = [item, newItem(sibling.id, ['sibling-photo']), newItem(other.id, ['keep-photo'])];
+    const ids = [
+      'delete-cover',
+      'keep-cover',
+      'overview',
+      'shared',
+      'unsorted',
+      'item-photo',
+      'receipt-file',
+      'sibling-photo',
+      'keep-photo',
+    ];
+    await mutate(
+      (d) => Object.assign(d, data),
+      ids.map((id) => ({
+        id,
+        original: new Blob([id]),
+        thumbnail: null,
+        width: 1,
+        height: 1,
+        name: id,
+        type: 'image/png',
+        capturedAt: '',
+      })),
+    );
+    return { data, room, sibling, other, ids };
+  }
+  it('deletes a room with its records and assets, retaining sibling rooms and shared photos', async () => {
+    const { data, room, sibling, other } = await seed();
+    await deleteRoom(room.id);
+    const saved = await loadInventory();
+    expect(saved.properties).toEqual(data.properties);
+    expect(saved.rooms.map((r) => r.id)).toEqual([sibling.id, other.id]);
+    expect(saved.items.map((i) => i.roomId)).toEqual([sibling.id, other.id]);
+    for (const id of ['overview', 'unsorted', 'item-photo', 'receipt-file'])
+      expect(await getAsset(id)).toBeUndefined();
+    for (const id of ['shared', 'sibling-photo', 'keep-photo', 'delete-cover'])
+      expect(await getAsset(id)).toBeDefined();
+  });
+  it('deletes an entire property while preserving other properties and shared assets', async () => {
+    const { data, other } = await seed();
+    await deleteProperty('delete');
+    const saved = await loadInventory();
+    expect(saved.properties).toEqual([data.properties[1]]);
+    expect(saved.rooms).toEqual([other]);
+    expect(saved.items).toEqual([data.items[2]]);
+    for (const id of [
+      'delete-cover',
+      'overview',
+      'unsorted',
+      'item-photo',
+      'receipt-file',
+      'sibling-photo',
+    ])
+      expect(await getAsset(id)).toBeUndefined();
+    for (const id of ['shared', 'keep-cover', 'keep-photo'])
+      expect(await getAsset(id)).toBeDefined();
+  });
+  it('restores deleted files and all records if saving the deletion fails', async () => {
+    const { data, ids } = await seed();
+    const put = IDBObjectStore.prototype.put;
+    const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      value,
+      key,
+    ) {
+      if (this.name === 'state') throw Error('Synthetic save failure');
+      return put.call(this, value, key!);
+    });
+    try {
+      await expect(deleteProperty('delete')).rejects.toThrow('Synthetic save failure');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await loadInventory()).toEqual(data);
+    for (const id of ids) expect(await (await getAsset(id))!.original.text()).toBe(id);
   });
 });
