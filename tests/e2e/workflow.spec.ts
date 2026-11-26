@@ -243,7 +243,7 @@ test('skipped drafts remain saved without cycling through the same session', asy
   await makeItem(page, [1]);
   await makeItem(page, [1]);
   await backToRoom(page);
-  await page.getByRole('button', { name: /2 items need details/ }).click();
+  await page.getByRole('button', { name: 'Start details', exact: true }).click();
   await page.getByLabel('Item name', { exact: true }).fill('Draft one');
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await expect(page.getByLabel('Item name', { exact: true })).toHaveValue('');
@@ -498,7 +498,7 @@ test('existing unassigned photos still support grouping and undo', async ({ page
       .getByRole('button', { name: 'Move to item photos for labeling', exact: true })
       .click();
   }
-  await page.getByRole('button', { name: /2 photos to label/ }).click();
+  await page.getByRole('button', { name: 'Label', exact: true }).click();
   await makeItem(page, [1, 2]);
   await page.getByRole('button', { name: 'Undo photo change', exact: true }).click();
   await expect(page.getByText('2 left to label', { exact: true })).toBeVisible();
