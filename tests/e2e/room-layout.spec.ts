@@ -197,7 +197,7 @@ test('room reference layout supports empty, covered and pending states, cover ch
   await seed(page);
   await page.goto('./#/room/living');
   await expect(page.getByText('No photos yet', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Overview · 0' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Room overview', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Add overview shots', exact: true })).toBeVisible();
   await expect(
     page.locator('.room-empty').getByRole('button', { name: 'Add items' }),
@@ -206,12 +206,13 @@ test('room reference layout supports empty, covered and pending states, cover ch
   await page.screenshot({ path: 'artifacts/room-reference-empty.png' });
   await populate(page);
   await expect(page.locator('.room-hero img')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Overview · 4' })).toBeVisible();
+  await expect(page.locator('.room-overview-heading > span')).toHaveText('4 photos');
   await expect(page.locator('.cover-badge')).toHaveCount(1);
-  await expect(page.locator('.room-tasks > button')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Label', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start details', exact: true })).toBeVisible();
   await expect(page.locator('.room-items .list-row').first()).toContainText('Sofa');
   await expect(page.locator('.room-items .list-row').last()).toContainText('Reviewed chair');
-  await expect(page.locator('.room-heading p')).toHaveText('6 items · $9,870.00 documented');
+  await expect(page.locator('.room-heading p')).toHaveText('6 items · $9,870 documented');
   await page.screenshot({ path: 'artifacts/room-reference-populated.png' });
   await page.getByRole('button', { name: 'Overview photo 2', exact: true }).click();
   await page.getByRole('button', { name: 'Make room cover', exact: true }).click();
@@ -220,9 +221,10 @@ test('room reference layout supports empty, covered and pending states, cover ch
   await page.getByRole('button', { name: 'Overview photo 1', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Current cover', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Move to item photos for labeling' }).click();
-  await expect(page.getByRole('heading', { name: 'Overview · 3' })).toBeVisible();
+  await expect(page.locator('.room-overview-heading > span')).toHaveText('3 photos');
   await expect(page.locator('.room-hero img')).toBeVisible();
-  await expect(page.getByRole('button', { name: /4 photos to label/ })).toBeVisible();
+  await expect(page.locator('.unlabeled-count')).toHaveText('4unlabeled');
+
   await page.getByRole('button', { name: 'Room options', exact: true }).click();
   await page.getByRole('button', { name: 'Rename room', exact: true }).click();
   await page.getByLabel('Room name', { exact: true }).fill('Family Room');
@@ -260,6 +262,126 @@ async function inventoryState(page: Page) {
       }),
   );
 }
+
+test('room filters and actions use live inventory and enter the full labeling and item editors', async ({
+  page,
+}) => {
+  await seed(page);
+  await populate(page);
+  await page.goto('./#/room/living');
+  const all = page.getByRole('button', { name: 'All 6', exact: true });
+  const needs = page.getByRole('button', { name: 'Needs details 5', exact: true });
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+  await needs.focus();
+  await page.keyboard.press('Enter');
+  await expect(needs).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.room-items .list-row')).toHaveCount(5);
+  await expect(page.locator('.room-items')).not.toContainText('Reviewed chair');
+  await all.click();
+  await expect(page.locator('.room-items .list-row')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Start details', exact: true }).click();
+  await expect(page).toHaveURL(/\/details\/item-1\?session$/);
+  await expect(page.getByLabel('Item name', { exact: true })).toHaveValue('Sofa');
+  await page.getByRole('button', { name: 'Living Room', exact: true }).click();
+  await page.locator('.room-items .list-row').filter({ hasText: 'Sofa' }).click();
+  await expect(page).toHaveURL(/\/item\/item-1$/);
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+  await page.getByLabel('Item name', { exact: true }).fill('Blue ottoman');
+  await page.getByLabel('Purchase price per unit (USD)', { exact: true }).fill('125.25');
+  await page.getByLabel('Quantity', { exact: true }).fill('2');
+  await expect(page.getByRole('button', { name: 'Add item photos', exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: /Reviewed/ }).check();
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
+  await expect(page.locator('.room-heading p')).toHaveText('6 items · $10,120.50 documented');
+  await expect(page.locator('.room-items-heading > span')).toHaveText('6 · $10,120.50');
+  await expect(page.getByRole('button', { name: 'Needs details 4', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Label', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Label photos', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Label photo 1', exact: true }).click();
+  await page.getByLabel('Item name', { exact: true }).fill('Table lamp');
+  await expect(page.getByLabel('Purchase price per unit (USD)', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: 'Save & return to photos', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Label photos', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Item name', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Living Room', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'All 7', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Needs details 5', exact: true })).toBeVisible();
+  await expect(page.locator('.unlabeled-count')).toHaveText('2unlabeled');
+  await expect(page.locator('.room-heading p')).toHaveText('7 items · $10,120.50 documented');
+  await page.reload();
+  await expect(page.locator('.room-items')).toContainText('Blue ottoman');
+  await expect(page.locator('.room-items')).toContainText('Table lamp');
+});
+
+test('rooms without overview, unlabeled photos or missing details stay usable at narrow and wide sizes', async ({
+  page,
+}) => {
+  await seed(page);
+  await populate(page);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open('jigsaw-homevault');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction('state', 'readwrite');
+          const state = tx.objectStore('state');
+          const query = state.get('inventory');
+          query.onsuccess = () => {
+            const inventory = query.result;
+            const room = inventory.rooms.find((room: any) => room.id === 'living');
+            room.roomPhotos = [];
+            room.unsortedPhotos = [];
+            room.name = 'Living room and family gathering space';
+            inventory.items.forEach((item: any) => {
+              item.reviewed = true;
+            });
+            inventory.items[1].name =
+              'Handcrafted upholstered lounge chair with matching footstool';
+            inventory.items[1].photos = [];
+            state.put(inventory, 'inventory');
+          };
+          tx.onabort = () => {
+            db.close();
+            reject(tx.error);
+          };
+          tx.oncomplete = () => {
+            db.close();
+            window.dispatchEvent(new Event('vault-change'));
+            resolve();
+          };
+        };
+      }),
+  );
+  await page.goto('./#/room/living');
+  await expect(page.locator('.room-overview-heading > span')).toHaveText('0 photos');
+  await expect(page.locator('.room-hero img')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Label', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start details', exact: true })).toHaveCount(0);
+  await expect(page.locator('.room-items .badge')).toHaveCount(0);
+  await expect(page.locator('.room-items .list-row').nth(1)).toContainText('0 photos');
+  for (const width of [320, 390, 768, 1024]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    const title = (await page.locator('.room-heading').boundingBox())!;
+    const nav = (await page.getByRole('navigation', { name: 'Page navigation' }).boundingBox())!;
+    expect(title.y).toBeGreaterThanOrEqual(nav.y + nav.height);
+  }
+  await page.getByRole('button', { name: 'Needs details 0', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'All items reviewed', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Show all items', exact: true }).click();
+  await expect(page.locator('.room-items .list-row')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Add overview shots', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/capture\/living\?overview$/);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.locator('.room-hero')).toBeVisible();
+});
 
 test('property edit omits insurance and keeps date inputs inside their card', async ({ page }) => {
   await seed(page);
@@ -329,11 +451,11 @@ test('room spacing aligns and fullscreen photos restore the white bar and page p
   await populate(page);
   await page.goto('./#/room/living');
   await expect(page.getByText('Needs details first', { exact: true })).toHaveCount(0);
-  for (const width of [320, 390, 768]) {
+  for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 844 });
     const overview = (await page.locator('.room-overview').boundingBox())!;
     const items = (await page.locator('.room-inventory').boundingBox())!;
-    const tasks = (await page.locator('.room-tasks').boundingBox())!;
+    const tasks = (await page.locator('.room-unlabeled').boundingBox())!;
     const heading = (await page.locator('.room-heading').boundingBox())!;
     for (const box of [items, tasks, heading]) {
       expect(box.x).toBe(overview.x);
@@ -342,6 +464,7 @@ test('room spacing aligns and fullscreen photos restore the white bar and page p
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
+    await page.screenshot({ path: `artifacts/room-design-${width}.png` });
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'artifacts/room-spacing-mobile.png' });
@@ -363,10 +486,7 @@ test('room spacing aligns and fullscreen photos restore the white bar and page p
     'rgb(255, 255, 255)',
   );
   await expect.poll(() => page.evaluate(() => scrollY)).toBe(before);
-  await page
-    .locator('.room-items-heading')
-    .getByRole('button', { name: 'Add items', exact: true })
-    .click();
+  await page.getByRole('button', { name: 'Take photos in Living Room', exact: true }).click();
   await expect(page.locator('.camera-title h1')).toHaveText('Living Room');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   // The same gutter applies on setup, record, sorting and report screens.

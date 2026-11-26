@@ -2,6 +2,17 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## Room design revision
+
+Integrated the photo-labeling revision (`9a630b1`) before verifying this layout. Passed **28 unit/integration tests**, the strict TypeScript/production build, and **27 Chromium browser scenarios**. After the final CSS adjustment to the wide-screen callout, rebuilt and reran all **8 room-layout scenarios** successfully.
+
+- Compared the rendered room page with the supplied design: a cover/neutral hero with white navigation and dark lower gradient; a white Room overview card with photo count, cover marker and add tile; Items totals, an unlabeled-photo stack and Label action; All/Needs details filters and Start details; and one rounded item list. Production content comes from stored inventory.
+- Verified filter selection with keyboard input, live counts and exact cents/quantity totals after editing and labeling, and reviewed-item status. Item rows enter the always-editable editor, Start details opens the existing review session, and labeling Save returns to the grid without advancing. Existing Add to item/Add item photos and full-precision Maps behavior pass the combined suite.
+- Verified empty rooms, no overview cover, no unlabeled photos, no items needing details, long room/item names, and items without photos. Layout and navigation checks pass at 320, 390, 768 and 1024 px without horizontal overflow. Cover changes, overview reclassification, rename/deletion, contextual camera controls and photo-viewer scroll restoration remain functional.
+- Visually inspected the empty and populated mobile views and the 320/1024 px layouts. Screenshots: `artifacts/room-reference-empty.png`, `artifacts/room-reference-populated.png`, and `artifacts/room-design-{320,390,768,1024}.png`. Images and records in these artifacts are synthetic browser-test fixtures.
+
+No deployment or default-branch merge was performed. The existing large-bundle build warning remains; physical iPhone/Android camera, storage and native Maps handoff are not verified by these browser checks.
+
 ## Photo labeling, editable items, and saved location revision
 
 Verified with **28 unit/integration tests**, the strict TypeScript/production build, and **25 Chromium browser scenarios**. The browser suite uses the production build on an isolated local port and synthetic photos, receipts, serial labels, and locations.

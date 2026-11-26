@@ -314,10 +314,15 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   usePhotoViewport(!!viewer);
+  const [filter, setFilter] = useState<'all' | 'needs'>('all');
   const [name, setName] = useState(room.name);
   const [busy, setBusy] = useState(false);
   const optionsDialog = useRef<HTMLDialogElement>(null);
   const cover = room.roomPhotos[0];
+  const documentedValue = money(s.total).replace(/\.00$/, '');
+  const visibleItems = [...s.items]
+    .filter((item) => filter === 'all' || !item.reviewed)
+    .sort((a, b) => Number(a.reviewed) - Number(b.reviewed));
   const hasPhotos =
     room.roomPhotos.length +
       s.unsorted +
@@ -354,13 +359,21 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
           <p>
             {!hasPhotos && !s.items.length
               ? 'No photos yet'
-              : `${s.items.length} ${s.items.length === 1 ? 'item' : 'items'} · ${money(s.total)} documented`}
+              : `${s.items.length} ${s.items.length === 1 ? 'item' : 'items'} · ${documentedValue} documented`}
           </p>
         </div>
       </header>
       <div className="room-content">
         <section className="room-overview" aria-label="Room overview">
-          <h2>Overview · {room.roomPhotos.length}</h2>
+          <div className="room-overview-heading">
+            <h2>
+              <House size={19} aria-hidden="true" />
+              Room overview
+            </h2>
+            <span>
+              {room.roomPhotos.length} {room.roomPhotos.length === 1 ? 'photo' : 'photos'}
+            </span>
+          </div>
           <div className="photo-strip overview-strip">
             {room.roomPhotos.map((photo, index) => (
               <div className={`overview-thumbnail ${index === 0 ? 'is-cover' : ''}`} key={photo}>
@@ -380,70 +393,90 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
               <Plus size={20} />
             </button>
           </div>
+          {!room.roomPhotos.length && (
+            <p className="overview-hint">Add a room photo to set its cover.</p>
+          )}
         </section>
-        {(s.unsorted > 0 || s.needs > 0) && (
-          <div className="card room-tasks">
-            {s.unsorted > 0 && (
-              <button onClick={() => go(`/sort/${room.id}`)}>
-                <LayoutGrid size={18} />
-                <strong className="grow">
-                  {s.unsorted} {s.unsorted === 1 ? 'photo' : 'photos'} to label
-                </strong>
-                <span>Label</span>
-                <ChevronRight size={18} />
-              </button>
-            )}
-            {s.needs > 0 && (
-              <button
-                className="needs-details"
-                onClick={() => go(`/details/${s.items.find((item) => !item.reviewed)!.id}?session`)}
-              >
-                <FileText size={18} />
-                <strong className="grow">
-                  {s.needs} {s.needs === 1 ? 'item needs' : 'items need'} details
-                </strong>
-                <span>Start</span>
-                <ChevronRight size={18} />
-              </button>
-            )}
-          </div>
-        )}
+
         <section className="room-inventory" aria-label="Room items">
           <div className="section-head room-items-heading">
             <h2>Items</h2>
-            <Button kind="soft" onClick={() => go(`/capture/${room.id}`)}>
-              <Plus size={18} />
-              Add items
-            </Button>
+            <span aria-label={`${s.items.length} items, ${documentedValue} documented`}>
+              {s.items.length} · {documentedValue}
+            </span>
           </div>
-          {s.items.length ? (
-            <div className="card list room-items">
-              {[...s.items]
-                .sort((a, b) => Number(a.reviewed) - Number(b.reviewed))
-                .map((item) => (
-                  <button className="list-row" key={item.id} onClick={() => go(`/item/${item.id}`)}>
-                    <Photo id={item.photos[0]} />
-                    <span className="grow">
-                      <strong>{title(item)}</strong>
-                      <small>
-                        {item.photos.length} {item.photos.length === 1 ? 'photo' : 'photos'}
-                      </small>
-                    </span>
-                    {item.reviewed ? (
-                      <strong className="money">
-                        {item.unitPriceCents === null
-                          ? '—'
-                          : money(item.unitPriceCents * item.quantity)}
-                      </strong>
-                    ) : (
-                      <Badge warn>Needs details</Badge>
-                    )}
-                  </button>
+          {s.unsorted > 0 && (
+            <div className="room-unlabeled">
+              <div className="unlabeled-stack" aria-hidden="true">
+                {room.unsortedPhotos.slice(0, 5).map((photo) => (
+                  <Photo key={photo} id={photo} />
                 ))}
+              </div>
+              <strong className="unlabeled-count">
+                {s.unsorted}
+                <span>unlabeled</span>
+              </strong>
+              <Button onClick={() => go(`/sort/${room.id}`)}>Label</Button>
+            </div>
+          )}
+          <div className="room-item-controls">
+            <div className="room-filters" role="group" aria-label="Filter items">
+              <button aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
+                All {s.items.length}
+              </button>
+              <button
+                className="needs-filter"
+                aria-pressed={filter === 'needs'}
+                onClick={() => setFilter('needs')}
+              >
+                Needs details {s.needs}
+              </button>
+            </div>
+            {s.needs > 0 && (
+              <button
+                className="start-details"
+                onClick={() => go(`/details/${s.items.find((item) => !item.reviewed)!.id}?session`)}
+              >
+                Start details
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          {visibleItems.length ? (
+            <div className="card list room-items">
+              {visibleItems.map((item) => (
+                <button className="list-row" key={item.id} onClick={() => go(`/item/${item.id}`)}>
+                  <Photo id={item.photos[0]} />
+                  <span className="grow">
+                    <strong>{title(item)}</strong>
+                    <small>
+                      {item.photos.length} {item.photos.length === 1 ? 'photo' : 'photos'}
+                    </small>
+                  </span>
+                  {item.reviewed ? (
+                    <strong className="money">
+                      {item.unitPriceCents === null
+                        ? '—'
+                        : money(item.unitPriceCents * item.quantity)}
+                    </strong>
+                  ) : (
+                    <Badge warn>Needs details</Badge>
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : filter === 'needs' && s.items.length ? (
+            <div className="empty room-empty">
+              <h3>All items reviewed</h3>
+              <p>There are no items needing details.</p>
+              <Button kind="secondary" onClick={() => setFilter('all')}>
+                Show all items
+              </Button>
             </div>
           ) : (
             <div className="empty room-empty">
               <h3>No items yet</h3>
+              {s.unsorted > 0 && <p>Label your photos to add them to this room.</p>}
               <Button onClick={() => go(`/capture/${room.id}`)}>
                 <Camera size={18} /> Add items
               </Button>

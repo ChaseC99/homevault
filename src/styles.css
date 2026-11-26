@@ -1884,21 +1884,24 @@ input::-webkit-date-and-time-value {
   text-overflow: ellipsis;
 }
 
-/* Room header, overview thumbnails and compact work queue. */
+/* Room cover, overview card and inventory. */
 .brand-bar.room-nav {
   max-width: 680px;
   height: calc(88px + env(safe-area-inset-top));
   padding: calc(28px + env(safe-area-inset-top)) var(--page-gutter) 16px;
   margin-bottom: calc(-88px - env(safe-area-inset-top));
   border: 0;
-  background: #ece8df;
+  color: white;
+  background: linear-gradient(#0004, #0000);
   backdrop-filter: none;
 }
 .room-nav #top-back {
   max-width: calc(100% - 56px);
 }
 .room-nav .back {
-  font-size: 0.9375rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
 }
 .options-button {
   width: 44px;
@@ -1909,13 +1912,6 @@ input::-webkit-date-and-time-value {
   place-items: center;
   color: inherit;
   border-radius: 10px;
-}
-.brand-bar.room-nav.has-cover {
-  color: white;
-  background: linear-gradient(#0006, #0000);
-}
-.room-nav.has-cover .back {
-  color: white;
 }
 .brand-bar.room-nav.is-scrolled {
   background: white;
@@ -1931,14 +1927,10 @@ main.room-main {
 }
 .room-hero {
   position: relative;
-  height: calc(196px + env(safe-area-inset-top));
-  background: #ece8df;
-  border-bottom: 1.5px dashed #cfc8ba;
-  padding: 0 var(--page-gutter) 16px;
+  min-height: calc(196px + env(safe-area-inset-top));
+  background: #c4beaf;
+  padding: calc(116px + env(safe-area-inset-top)) var(--page-gutter) 18px;
   justify-content: flex-end;
-}
-.room-hero.has-cover {
-  border: 0;
   color: white;
 }
 .room-hero .room-cover {
@@ -1948,11 +1940,11 @@ main.room-main {
   height: 100%;
   border-radius: 0;
 }
-.room-hero.has-cover::after {
+.room-hero::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, #0002, #0000 35%, #0000 45%, #000a);
+  background: linear-gradient(180deg, #0001, #0000 35%, #0000 45%, #000b);
   pointer-events: none;
 }
 .room-heading {
@@ -1963,21 +1955,23 @@ main.room-main {
   gap: 3px;
 }
 .room-heading h1 {
-  font-size: 1.75rem;
+  font-family: Inter, sans-serif;
+  font-size: 1.875rem;
+  font-weight: 700;
   letter-spacing: -0.025em;
 }
 .room-heading p {
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
 }
-.room-hero.has-cover p {
+.room-hero p {
   color: #fffffff0;
 }
 .room-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 20px var(--page-gutter) 0;
+  gap: 32px;
+  padding: 16px var(--page-gutter) 0;
 }
 .room-overview,
 .room-inventory {
@@ -1986,29 +1980,57 @@ main.room-main {
   flex-direction: column;
   gap: 12px;
 }
-.room-overview h2 {
+.room-overview {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  gap: 8px;
+}
+.room-overview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.room-overview-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: Inter, sans-serif;
-  font-size: 0.75rem;
-  color: var(--muted);
+  font-size: 1rem;
   letter-spacing: 0;
-  margin-bottom: 0;
+}
+.room-overview-heading h2 svg {
+  color: var(--green);
+}
+.room-overview-heading > span,
+.room-items-heading > span {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.overview-hint {
+  font-size: 0.875rem;
 }
 .overview-strip {
   align-items: center;
-  gap: 8px;
-  padding: 0;
-  margin: 0;
+  gap: 4px;
+  padding: 4px;
+  margin: -4px;
 }
 .overview-thumbnail {
   position: relative;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 2px;
   border: 2px solid transparent;
 }
 .overview-thumbnail .photo {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
 }
 .overview-thumbnail.is-cover {
   border-color: var(--green);
@@ -2021,69 +2043,115 @@ main.room-main {
   border-radius: 5px;
   background: #fffffff0;
   color: #1f4337;
-  font-size: 0.5625rem;
+  font-size: 0.75rem;
   font-weight: 600;
   pointer-events: none;
 }
 .overview-add {
-  width: 64px;
-  height: 64px;
+  width: 52px;
+  height: 52px;
+  margin-left: 4px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
   background: white;
-  border: 1.5px dashed var(--green);
+  border: 1.5px dashed #b9b2a4;
   border-radius: 10px;
   color: var(--green);
 }
-.overview-thumbnail ~ .overview-add {
-  background: transparent;
-  border-color: #b9b2a4;
+.room-unlabeled {
+  display: grid;
+  grid-template-columns: minmax(0, 148px) minmax(min-content, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1.5px dashed #b8d2c8;
+  border-radius: 16px;
+  background: #fff;
 }
-.room-tasks {
-  border-radius: 14px;
-}
-.room-tasks > button {
-  width: 100%;
+.unlabeled-stack {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 46px;
-  padding: 10px 12px;
-  background: white;
-  border: 0;
-  text-align: left;
-  color: var(--green);
+  min-width: 0;
 }
-.room-tasks > button + button {
-  border-top: 1px solid #efece5;
+.unlabeled-stack .photo {
+  width: 40px;
+  height: 40px;
+  min-width: 0;
+  flex: 0 1 40px;
+  border: 2px solid white;
+  border-radius: 8px;
 }
-.room-tasks strong {
-  font-size: 0.9375rem;
-  color: var(--ink);
+.unlabeled-stack .photo + .photo {
+  margin-left: -12px;
 }
-.room-tasks span {
-  font-size: 0.8125rem;
+.unlabeled-count {
+  display: flex;
+  flex-direction: column;
+  font-size: 1rem;
+  line-height: 1.2;
   font-weight: 600;
 }
-.room-tasks .needs-details {
+.room-unlabeled .button {
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+.room-item-controls,
+.room-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.room-item-controls {
+  justify-content: space-between;
+  row-gap: 0;
+}
+.room-filters button {
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 24px;
+  background: #e9e6df;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.room-filters .needs-filter {
+  background: var(--warning);
   color: var(--warning-ink);
 }
-.room-tasks > button > svg:last-child {
-  color: var(--muted);
+.room-filters button[aria-pressed='true'] {
+  background: var(--ink);
+  color: white;
+}
+.start-details {
+  min-height: 44px;
+  margin-left: auto;
+  padding: 8px 0;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 .room-items-heading {
-  margin: 0;
+  margin: 0 0 2px;
 }
 .room-items-heading h2 {
   font-family: Inter, sans-serif;
-  font-size: 1rem;
+  font-size: 1.25rem;
   letter-spacing: 0;
 }
+.room-items {
+  border-radius: 18px;
+}
 .room-items .list-row {
-  padding: 8px 14px;
+  padding: 9px 14px;
   gap: 12px;
-  min-height: 56px;
+  min-height: 60px;
 }
 .room-items .list-row .photo {
   width: 40px;
@@ -2094,10 +2162,10 @@ main.room-main {
   gap: 1px;
 }
 .room-items .list-row small {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
 }
 .room-items .list-row .badge {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   padding: 3px 8px;
   border-radius: 8px;
 }
@@ -2165,11 +2233,9 @@ main.room-main {
     gap: 8px;
   }
   .room-items .list-row .badge {
-    font-size: 0.625rem;
-    padding: 3px 6px;
-  }
-  .room-tasks strong {
-    font-size: 0.8125rem;
+    white-space: normal;
+    max-width: 86px;
+    padding: 3px 7px;
   }
 }
 
