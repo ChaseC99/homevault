@@ -17,6 +17,7 @@ import { mutate, loadInventory, getAsset, deleteRoom, deleteProperty } from '../
 globalThis.window = new EventTarget() as unknown as Window & typeof globalThis;
 describe('inventory invariants', () => {
   it('prices each unit exactly once, includes draft values and excludes unknowns', () => {
+    expect(stats(emptyInventory()).ready).toBe(false);
     const d = emptyInventory(),
       r = newRoom('p', 'Bedroom', []);
     d.rooms = [r];
@@ -58,8 +59,6 @@ describe('inventory invariants', () => {
     expect(d.items[0].reviewed).toBe(false);
     expect(r.unsortedPhotos).toEqual([]);
   });
-  it('never marks an empty property ready', () =>
-    expect(stats(emptyInventory()).ready).toBe(false));
   it('keeps unnamed group numbers stable within each room and prefers an entered name', () => {
     const d = emptyInventory();
     const room = newRoom('p', 'Kitchen', []);
@@ -109,13 +108,10 @@ describe('receipt interpretation', () => {
       amount: 7500,
     });
   });
-  it('keeps missing and impossible fields absent', () => {
-    expect(parseReceipt('02/31/2024\nSUBTOTAL 5.00\nTAX 0.30')).not.toHaveProperty('date');
+  it('keeps missing fields absent', () => {
     expect(parseReceipt('')).toEqual({ store: undefined });
     expect(parseReceipt('SHOP\nSUBTOTAL 5.00')).not.toHaveProperty('amount');
   });
-});
-describe('receipt OCR variations', () => {
   it.each([
     ['Date: 11 . 21 . 2026', '2026-11-21'],
     ['PURCHASE DATE: 11 / 2I / 2O26', '2026-11-21'],

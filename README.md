@@ -34,9 +34,9 @@ The deployment workflow is `.github/workflows/deploy.yml`. For `ChaseC99/homevau
 
 1. Push this project, including `public/`, `package-lock.json`, and `.github/`, to the repository's `main` branch. The bundled OCR model, WASM files, PDF assets, icons, and report fonts are required; generated `dist/` and `node_modules/` stay out of Git.
 2. In the repository's **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**.
-3. Open **Actions → Deploy to GitHub Pages → Run workflow** if the initial push happened before Pages was enabled. Subsequent pushes to `main` build, test, and deploy automatically.
+3. Open **Actions → Deploy to GitHub Pages → Run workflow** if the initial push happened before Pages was enabled. Subsequent pushes to `main` build and deploy automatically.
 
-The workflow uses Node 24, installs the locked dependencies, refreshes bundled OCR/PDF assets, runs unit tests, builds the production app, and runs the browser suite before uploading only `dist/`. It reads the actual site path from GitHub Pages, so another repository name or a configured custom domain does not require editing source paths. If your default branch is not `main`, update the workflow trigger. No deployment secrets or personal access token are needed.
+The workflow uses Node 24, installs the locked dependencies, refreshes bundled OCR/PDF assets, builds the production app, and uploads only `dist/` for deployment. Tests run locally only; GitHub Actions does not run tests or install browsers. It reads the actual site path from GitHub Pages, so another repository name or a configured custom domain does not require editing source paths. If your default branch is not `main`, update the workflow trigger. No deployment secrets or personal access token are needed.
 
 For a local check at the same subpath (macOS/Linux):
 
@@ -83,15 +83,19 @@ After deployment, confirm **Ready offline** in **Organizer & device**, install o
 
 ## Validation
 
+Run tests locally before pushing to `main`:
+
 ```sh
 npm test
 npm run build
 npm run test:e2e
 ```
 
-The browser suite uses generated, clearly synthetic fixtures in `tests/fixtures/` and an isolated browser profile. It does not access a real camera or personal browser data. The test runner starts the production preview if needed. On macOS it uses installed Chrome; see `playwright.config.ts` to select another executable or Playwright Chromium.
+The browser suite uses generated, clearly synthetic fixtures in `tests/fixtures/` and an isolated browser profile. It does not access a real camera or personal browser data. The runner starts its own production preview; stop any existing preview on port 4173 or set `PLAYWRIGHT_PORT` to a free port. On macOS it uses installed Chrome; otherwise install a local browser once with `npx playwright install chromium`. See `playwright.config.ts` for browser overrides.
 
-Validation artifacts and screenshots are written to `artifacts/`. `VALIDATION.md` records the completed checks and remaining device-specific limits.
+`tests/model.test.ts` covers domain rules, receipt parsing, and atomic storage. Browser coverage is grouped into inventory setup/navigation/deletion, photo labeling/editing, camera/OCR/PDF workflows, and offline installation/updates. Shared setup and storage helpers live in `tests/e2e/helpers.ts`. Use `npm run test:e2e -- tests/e2e/sorting.spec.ts` for a focused local run. Exact spacing/color checks and duplicate journeys are omitted; device layout and camera quality still need hands-on review.
+
+The exported sample PDF is written to `artifacts/`. Playwright saves failure screenshots/traces in `test-results/` and its HTML report in `playwright-report/`. `VALIDATION.md` records completed checks and remaining device-specific limits.
 
 ## Source map
 

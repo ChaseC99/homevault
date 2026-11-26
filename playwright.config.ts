@@ -32,7 +32,7 @@ export default defineConfig({
   webServer: {
     command: `npm run preview -- --strictPort --host 127.0.0.1 --port ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
   reporter: [['list'], ['html', { open: 'never' }]],
 });

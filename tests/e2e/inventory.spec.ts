@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { failWrites, fixture, restoreWrites, snapshot } from './helpers';
 
 async function seed(page: Page) {
   await page.goto('./');
@@ -149,8 +150,6 @@ async function populate(page: Page) {
   );
 }
 
-test.beforeAll(() => mkdir('artifacts', { recursive: true }));
-
 test('camera follows room and property context, and the picker clears a room when property changes', async ({
   page,
 }) => {
@@ -191,9 +190,7 @@ test('camera follows room and property context, and the picker clears a room whe
   await expect(page.getByRole('combobox', { name: 'Room', exact: true })).toHaveValue('');
 });
 
-test('room reference layout supports empty, covered and pending states, cover changes, and rename', async ({
-  page,
-}) => {
+test('rooms support empty and populated inventory, cover changes, and rename', async ({ page }) => {
   await seed(page);
   await page.goto('./#/room/living');
   await expect(page.getByText('No photos yet', { exact: true })).toBeVisible();
@@ -203,7 +200,6 @@ test('room reference layout supports empty, covered and pending states, cover ch
     page.locator('.room-empty').getByRole('button', { name: 'Add items' }),
   ).toBeVisible();
   await expect(page.locator('.nav-camera-label')).toHaveText('Living Room');
-  await page.screenshot({ path: 'artifacts/room-reference-empty.png' });
   await populate(page);
   await expect(page.locator('.room-hero img')).toBeVisible();
   await expect(page.locator('.room-overview-heading > span')).toHaveText('4 photos');
@@ -213,9 +209,19 @@ test('room reference layout supports empty, covered and pending states, cover ch
   await expect(page.locator('.room-items .list-row').first()).toContainText('Sofa');
   await expect(page.locator('.room-items .list-row').last()).toContainText('Reviewed chair');
   await expect(page.locator('.room-heading p')).toHaveText('6 items · $9,870 documented');
-  await page.screenshot({ path: 'artifacts/room-reference-populated.png' });
+  await page.evaluate(() => window.scrollTo(0, 120));
+  const scrollBefore = await page.evaluate(() => scrollY);
+  await page.getByRole('button', { name: 'Overview photo 1', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Room overview photo' })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(scrollBefore);
   await page.getByRole('button', { name: 'Overview photo 2', exact: true }).click();
   await page.getByRole('button', { name: 'Make room cover', exact: true }).click();
+  expect((await snapshot(page)).rooms.find((room) => room.id === 'living')!.roomPhotos[0]).toBe(
+    'overview-2',
+  );
   await expect(page.getByRole('dialog', { name: 'Room overview photo' })).toHaveCount(0);
   await page.reload();
   await page.getByRole('button', { name: 'Overview photo 1', exact: true }).click();
@@ -282,7 +288,14 @@ test('room filters and actions use live inventory and enter the full labeling an
   await page.getByRole('button', { name: 'Start details', exact: true }).click();
   await expect(page).toHaveURL(/\/details\/item-1\?session$/);
   await expect(page.getByLabel('Item name', { exact: true })).toHaveValue('Sofa');
-  await page.getByRole('button', { name: 'Living Room', exact: true }).click();
+  const drafts = ['Sofa', 'End table', 'Coffee table', 'Floor lamp', 'Area rug'];
+  for (const name of drafts) {
+    await page.getByLabel('Notes / additional information').fill(`Reviewed draft: ${name}`);
+    await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  }
+  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
+  const saved = (await snapshot(page)).items.filter((item) => !item.reviewed);
+  expect(saved.map((item) => item.notes)).toEqual(drafts.map((name) => `Reviewed draft: ${name}`));
   await page.locator('.room-items .list-row').filter({ hasText: 'Sofa' }).click();
   await expect(page).toHaveURL(/\/item\/item-1$/);
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
@@ -313,202 +326,6 @@ test('room filters and actions use live inventory and enter the full labeling an
   await expect(page.locator('.room-items')).toContainText('Table lamp');
 });
 
-test('rooms without overview, unlabeled photos or missing details stay usable at narrow and wide sizes', async ({
-  page,
-}) => {
-  await seed(page);
-  await populate(page);
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('jigsaw-homevault');
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          const db = request.result;
-          const tx = db.transaction('state', 'readwrite');
-          const state = tx.objectStore('state');
-          const query = state.get('inventory');
-          query.onsuccess = () => {
-            const inventory = query.result;
-            const room = inventory.rooms.find((room: any) => room.id === 'living');
-            room.roomPhotos = [];
-            room.unsortedPhotos = [];
-            room.name = 'Living room and family gathering space';
-            inventory.items.forEach((item: any) => {
-              item.reviewed = true;
-            });
-            inventory.items[1].name =
-              'Handcrafted upholstered lounge chair with matching footstool';
-            inventory.items[1].photos = [];
-            state.put(inventory, 'inventory');
-          };
-          tx.onabort = () => {
-            db.close();
-            reject(tx.error);
-          };
-          tx.oncomplete = () => {
-            db.close();
-            window.dispatchEvent(new Event('vault-change'));
-            resolve();
-          };
-        };
-      }),
-  );
-  await page.goto('./#/room/living');
-  await expect(page.locator('.room-overview-heading > span')).toHaveText('0 photos');
-  await expect(page.locator('.room-hero img')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Label', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Start details', exact: true })).toHaveCount(0);
-  await expect(page.locator('.room-items .badge')).toHaveCount(0);
-  await expect(page.locator('.room-items .list-row').nth(1)).toContainText('0 photos');
-  for (const width of [320, 390, 768, 1024]) {
-    await page.setViewportSize({ width, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
-    const title = (await page.locator('.room-heading').boundingBox())!;
-    const nav = (await page.getByRole('navigation', { name: 'Page navigation' }).boundingBox())!;
-    expect(title.y).toBeGreaterThanOrEqual(nav.y + nav.height);
-  }
-  await page.getByRole('button', { name: 'Needs details 0', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: 'All items reviewed', exact: true }),
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'Show all items', exact: true }).click();
-  await expect(page.locator('.room-items .list-row')).toHaveCount(6);
-  await page.getByRole('button', { name: 'Add overview shots', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/capture\/living\?overview$/);
-  await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await expect(page.locator('.room-hero')).toBeVisible();
-});
-
-test('property edit omits insurance and keeps date inputs inside their card', async ({ page }) => {
-  await seed(page);
-  await page.goto('./#/property/second');
-  await expect(page.getByLabel('Add cover photo', { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Change cover', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Insurance', exact: true })).toHaveCount(0);
-  await page.getByLabel('Started', { exact: true }).fill('2026-11-21');
-  await page.getByLabel('Finished', { exact: true }).fill('2026-11-26');
-  for (const width of [320, 390, 540, 768]) {
-    await page.setViewportSize({ width, height: 844 });
-    for (const label of ['Started', 'Finished']) {
-      const field = page.getByLabel(label, { exact: true });
-      const bounds = await field.evaluate((input) => {
-        const card = input.closest('.form-card')!;
-        const rect = card.getBoundingClientRect();
-        const style = getComputedStyle(card);
-        const own = input.getBoundingClientRect();
-        return {
-          left: own.left,
-          right: own.right,
-          min: rect.left + parseFloat(style.paddingLeft),
-          max: rect.right - parseFloat(style.paddingRight),
-        };
-      });
-      expect(bounds.left).toBeGreaterThanOrEqual(bounds.min);
-      expect(bounds.right).toBeLessThanOrEqual(bounds.max);
-    }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
-  }
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByLabel('Started', { exact: true }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: 'artifacts/edit-dates-contained.png' });
-  await page.getByRole('button', { name: 'Save property', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Nguyen residence', exact: true })).toBeVisible();
-  await page.reload();
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await expect(page.getByLabel('Started', { exact: true })).toHaveValue('2026-11-21');
-  await expect(page.getByLabel('Finished', { exact: true })).toHaveValue('2026-11-26');
-});
-
-test('property cover changes are available only on the edit page and survive reload', async ({
-  page,
-}) => {
-  await seed(page);
-  await page.goto('./#/property/second');
-  await expect(page.locator('.property-cover input')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await page
-    .getByLabel('Choose exterior photo', { exact: true })
-    .setInputFiles(path.resolve('tests/fixtures/photo-3.jpg'));
-  await page.getByRole('button', { name: 'Save property', exact: true }).click();
-  await expect(page.locator('.property-cover img')).toBeVisible();
-  await page.reload();
-  await expect(page.locator('.property-cover input')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await expect(page.getByLabel('Change cover photo', { exact: true })).toBeAttached();
-});
-
-test('room spacing aligns and fullscreen photos restore the white bar and page position', async ({
-  page,
-}) => {
-  await seed(page);
-  await populate(page);
-  await page.goto('./#/room/living');
-  await expect(page.getByText('Needs details first', { exact: true })).toHaveCount(0);
-  for (const width of [320, 390, 768, 1024]) {
-    await page.setViewportSize({ width, height: 844 });
-    const overview = (await page.locator('.room-overview').boundingBox())!;
-    const items = (await page.locator('.room-inventory').boundingBox())!;
-    const tasks = (await page.locator('.room-unlabeled').boundingBox())!;
-    const heading = (await page.locator('.room-heading').boundingBox())!;
-    for (const box of [items, tasks, heading]) {
-      expect(box.x).toBe(overview.x);
-      expect(box.width).toBe(overview.width);
-    }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
-    await page.screenshot({ path: `artifacts/room-design-${width}.png` });
-  }
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: 'artifacts/room-spacing-mobile.png' });
-  await page.evaluate(() => window.scrollTo(0, 120));
-  const before = await page.evaluate(() => scrollY);
-  await expect(page.getByRole('navigation', { name: 'Page navigation' })).toHaveCSS(
-    'background-color',
-    'rgb(255, 255, 255)',
-  );
-  await page.getByRole('button', { name: 'Overview photo 1', exact: true }).click();
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#10140f');
-  await page
-    .getByRole('dialog', { name: 'Room overview photo' })
-    .getByRole('button', { name: 'Close', exact: true })
-    .click();
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#ffffff');
-  await expect(page.getByRole('navigation', { name: 'Page navigation' })).toHaveCSS(
-    'background-color',
-    'rgb(255, 255, 255)',
-  );
-  await expect.poll(() => page.evaluate(() => scrollY)).toBe(before);
-  await page.getByRole('button', { name: 'Take photos in Living Room', exact: true }).click();
-  await expect(page.locator('.camera-title h1')).toHaveText('Living Room');
-  await page.getByRole('button', { name: 'Done', exact: true }).click();
-  // The same gutter applies on setup, record, sorting and report screens.
-  for (const route of [
-    '/property/second',
-    '/edit-property/second',
-    '/rooms/second',
-    '/item/item-0',
-    '/details/item-0',
-    '/sort/living',
-    '/reports/second',
-  ]) {
-    await page.goto(`./#${route}`);
-    await page.setViewportSize({ width: 320, height: 568 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
-    const header = (await page.locator('main header').first().boundingBox())!;
-    expect(header.x).toBe(18);
-  }
-});
-
 test('room and property menus require confirmation, survive failed deletion, and delete only their contents', async ({
   page,
 }) => {
@@ -526,20 +343,11 @@ test('room and property menus require confirmation, survive failed deletion, and
   expect(await inventoryState(page)).toEqual(before);
   await page.getByRole('button', { name: 'Room options', exact: true }).click();
   await page.getByRole('button', { name: 'Delete room', exact: true }).click();
-  await page.evaluate(() => {
-    const put = IDBObjectStore.prototype.put;
-    IDBObjectStore.prototype.put = function (value: any, key?: IDBValidKey) {
-      if (this.name === 'state') throw Error('Synthetic deletion failure');
-      return put.call(this, value, key!);
-    };
-    (window as any).restorePut = () => {
-      IDBObjectStore.prototype.put = put;
-    };
-  });
+  await failWrites(page);
   await roomDialog.getByRole('button', { name: 'Delete room', exact: true }).click();
-  await expect(roomDialog.getByRole('alert')).toContainText('Synthetic deletion failure');
+  await expect(roomDialog.getByRole('alert')).toContainText('Storage is full');
   expect(await inventoryState(page)).toEqual(before);
-  await page.evaluate(() => (window as any).restorePut());
+  await restoreWrites(page);
   await roomDialog.getByRole('button', { name: 'Delete room', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Nguyen residence', exact: true })).toBeVisible();
   await page.reload();
@@ -551,14 +359,10 @@ test('room and property menus require confirmation, survive failed deletion, and
   await page.getByRole('button', { name: 'Delete property', exact: true }).click();
   const propertyDialog = page.getByRole('dialog', { name: 'Delete property?', exact: true });
   await expect(propertyDialog).toContainText('Nguyen residence');
-  await expect(
-    propertyDialog.getByRole('button', { name: 'Delete property', exact: true }),
-  ).toHaveCSS('color', 'rgb(255, 255, 255)');
   await page.keyboard.press('Escape');
   expect(await inventoryState(page)).toEqual(afterRoom);
   await page.getByRole('button', { name: 'Property options', exact: true }).click();
   await page.getByRole('button', { name: 'Delete property', exact: true }).click();
-  await page.screenshot({ path: 'artifacts/delete-property-confirmation.png' });
   await propertyDialog.getByRole('button', { name: 'Delete property', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Properties', exact: true })).toBeVisible();
   await page.reload();
@@ -566,4 +370,109 @@ test('room and property menus require confirmation, survive failed deletion, and
   expect(afterProperty.inventory.properties.map((p: any) => p.id)).toEqual(['first']);
   expect(afterProperty.inventory.rooms.map((r: any) => r.id)).toEqual(['first-room']);
   expect(afterProperty.inventory.organizer).toEqual(before.inventory.organizer);
+});
+
+test('mobile setup keeps dates, pending rooms, and back navigation accessible; GPS stays separate', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({
+    latitude: 45.5200123456,
+    longitude: -122.6800987654,
+    accuracy: 12,
+  });
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('./');
+  await page.getByRole('button', { name: 'New property', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Insurance', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Street, city, state and ZIP')).toHaveAttribute(
+    'autocomplete',
+    'street-address',
+  );
+  await page.getByLabel('Property name', { exact: true }).fill('Location home');
+  await page.getByLabel('Street, city, state and ZIP').fill('123 Example Lane');
+  await page.getByRole('button', { name: 'Add current location', exact: true }).click();
+  const map = page.getByRole('link', { name: 'Open in Maps', exact: true });
+  await expect(map).toBeVisible();
+  const target = new URL((await map.getAttribute('href'))!);
+  expect(target.origin + target.pathname).toBe('https://maps.apple.com/place');
+  expect(target.searchParams.get('coordinate')).toBe('45.5200123456,-122.6800987654');
+  await expect(map).toHaveAttribute('target', '_blank');
+  await expect(page.getByText(/GPS:/)).toHaveCount(0);
+  // Verify the action opens the exact destination without contacting a mapping service.
+  await context.route('https://maps.apple.com/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: 'Map destination' }),
+  );
+  const popupPromise = page.waitForEvent('popup');
+  await map.click();
+  const popup = await popupPromise;
+  await expect(popup).toHaveURL(target.href);
+  await popup.close();
+  await expect(page.getByLabel('Street, city, state and ZIP')).toHaveValue('123 Example Lane');
+  await page.getByLabel('Started', { exact: true }).fill('2026-11-21');
+  await page.getByLabel('Finished', { exact: true }).fill('2026-11-26');
+  const start = await page.getByLabel('Started', { exact: true }).boundingBox();
+  const finish = await page.getByLabel('Finished', { exact: true }).boundingBox();
+  expect(finish!.y).toBeGreaterThanOrEqual(start!.y + start!.height);
+  expect(start!.x + start!.width).toBeLessThanOrEqual(320);
+  expect(finish!.x + finish!.width).toBeLessThanOrEqual(320);
+  const navigation = page.getByRole('navigation', { name: 'Page navigation' });
+  expect((await navigation.boundingBox())!.y).toBe(0);
+  await page.getByRole('button', { name: 'Save property', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Location home', exact: true })).toBeVisible();
+  expect((await snapshot(page)).properties[0].location).toEqual({
+    latitude: 45.5200123456,
+    longitude: -122.6800987654,
+    accuracy: 12,
+  });
+  await page.getByRole('button', { name: 'Add rooms', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Living Room None yet', exact: true }).click();
+  const pending = page.getByRole('region', { name: 'Pending rooms' });
+  const box = await pending.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(68);
+  expect(box!.y + box!.height).toBeLessThan(568);
+  await expect(pending.getByText('Living Room', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Bedroom None yet', exact: true }).click();
+  await page.getByRole('button', { name: 'Bedroom 1 in home', exact: true }).click();
+  await expect(pending.getByText('Bedroom 2', { exact: true })).toBeVisible();
+  await pending.getByRole('button', { name: 'Remove Bedroom 2', exact: true }).click();
+  await page.getByRole('button', { name: 'Add 2 rooms', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Location home', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(map).toHaveAttribute('href', target.href);
+  await expect(page.getByText(/45.5200123456/)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByLabel('Started', { exact: true })).toHaveValue('2026-11-21');
+  await expect(page.getByLabel('Finished', { exact: true })).toHaveValue('2026-11-26');
+  await page
+    .getByLabel('Choose exterior photo', { exact: true })
+    .setInputFiles(fixture('photo-3.jpg'));
+  await page.getByRole('button', { name: 'Remove location', exact: true }).click();
+  await page.getByRole('button', { name: 'Save property', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Location home', exact: true })).toBeVisible();
+  expect((await snapshot(page)).properties[0].location).toBeUndefined();
+  await expect(map).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.property-cover img')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByLabel('Change cover photo', { exact: true })).toBeAttached();
+});
+
+test('denied location leaves address entry usable', async ({ page }) => {
+  await page.addInitScript(() => {
+    navigator.geolocation.getCurrentPosition = (_success, failure) =>
+      failure?.({
+        code: 1,
+        message: 'denied',
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+      });
+  });
+  await page.goto('./#/new');
+  await page.getByLabel('Street, city, state and ZIP').fill('Manual address');
+  await page.getByRole('button', { name: 'Add current location', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Location permission is off');
+  await expect(page.getByLabel('Street, city, state and ZIP')).toHaveValue('Manual address');
 });

@@ -2,6 +2,14 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## Local test consolidation
+
+Tests run locally only. GitHub Actions installs dependencies, refreshes bundled assets, builds, and deploys Pages; it does not install browsers or execute tests. The older CI descriptions below are historical.
+
+Consolidated 27 browser scenarios in six files into 18 scenarios in four files, with shared creation, import, inventory-reading, and storage-failure helpers. Removed duplicate grouping, editing, navigation, and quota-failure journeys, exact spacing/color checks, and screenshots that were never compared. Kept persistence/rollback, destructive-action confirmation, OCR and receipt previews, PDF export, camera failure/retry, deployment paths, offline cache repair, and update recovery. The unit suite has 27 cases after merging the empty-inventory readiness assertion into the existing readiness test.
+
+Local verification passed: 27 unit/integration tests, the production build with `BASE_PATH=/homevault/`, and all 18 retained Chromium scenarios at that subpath (16 in the full run, then the two corrected receipt/PDF scenarios in a targeted rerun). Test sources also passed strict TypeScript checking and formatting checks. Physical-device limits below still apply. The build retains its existing large-bundle warning.
+
 ## Room design revision
 
 Integrated the photo-labeling revision (`9a630b1`) before verifying this layout. Passed **28 unit/integration tests**, the strict TypeScript/production build, and **27 Chromium browser scenarios**. After the final CSS adjustment to the wide-screen callout, rebuilt and reran all **8 room-layout scenarios** successfully.
