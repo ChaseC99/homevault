@@ -67,11 +67,11 @@ export function Reports({
       {s.unsorted > 0 && (
         <div className="notice warn">
           <div>
-            <strong>{s.unsorted} photos still need sorting.</strong>
+            <strong>{s.unsorted} photos still need labeling.</strong>
             <p>They’ll be labeled unassigned and excluded from item counts and totals.</p>
           </div>
           <Button kind="text" onClick={() => go(`/property/${pid}`)}>
-            Sort
+            Label photos
           </Button>
         </div>
       )}

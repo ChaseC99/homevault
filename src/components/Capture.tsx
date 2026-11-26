@@ -494,7 +494,7 @@ export function Capture({ room, overview, run }: { room: Room; overview: boolean
                 />
                 <span
                   className="capture-count"
-                  aria-label={`${photos.length} ${overview ? 'overview photos' : 'photos to sort'}`}
+                  aria-label={`${photos.length} ${overview ? 'overview photos' : 'photos to label'}`}
                 >
                   {photos.length}
                 </span>

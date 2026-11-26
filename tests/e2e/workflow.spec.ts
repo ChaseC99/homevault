@@ -58,17 +58,18 @@ async function addItems(page: Page) {
   await page.getByRole('button', { name: 'Take photos in Living Room', exact: true }).click();
 }
 async function makeItem(page: Page, photos: number[]) {
-  for (const number of photos)
-    await page.getByRole('button', { name: `Photo ${number}`, exact: true }).click();
-  await page
-    .getByRole('button', {
-      name: `Group ${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}`,
-      exact: true,
-    })
-    .click();
-  const naming = page.getByRole('dialog', { name: 'What’s this item?' });
-  await naming.getByRole('button', { name: 'Name later', exact: true }).click();
-  await expect(naming).not.toBeVisible();
+  if (photos.length === 1) {
+    await page.getByRole('button', { name: `Label photo ${photos[0]}`, exact: true }).click();
+  } else {
+    await page.getByRole('button', { name: 'Select photos', exact: true }).click();
+    for (const number of photos)
+      await page.getByRole('button', { name: `Select photo ${number}`, exact: true }).click();
+    await page
+      .getByRole('button', { name: `Label ${photos.length} photos as one item`, exact: true })
+      .click();
+  }
+  await page.getByRole('button', { name: 'Save & return to photos', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Label photos', exact: true })).toBeVisible();
 }
 async function backToRoom(page: Page) {
   await page
@@ -106,7 +107,7 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   // Keep coverage for older unassigned photos and reclassifying an overview.
   await page.getByRole('button', { name: 'Overview photo 2', exact: true }).click();
-  await page.getByRole('button', { name: 'Move to item photos for sorting', exact: true }).click();
+  await page.getByRole('button', { name: 'Move to item photos for labeling', exact: true }).click();
   await addItems(page);
   await importPhotos(page, ['photo-1.jpg', 'photo-2.jpg']);
   await expect(page.locator('.capture-count')).toHaveText('3');
@@ -114,7 +115,6 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   await makeItem(page, [2, 3]);
   await backToRoom(page);
   await page.getByRole('button', { name: /Item 1 2 photos/ }).click();
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('Item name', { exact: true }).fill('Walnut end table');
   await page.getByLabel('Category', { exact: true }).fill('Furniture');
   await page.getByLabel('Quantity', { exact: true }).fill('2');
@@ -144,12 +144,14 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
     timeout: 90000,
   });
   await page.getByRole('combobox', { name: 'Condition', exact: true }).selectOption('Good');
-  await page.getByRole('button', { name: 'Save reviewed record', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Walnut end table', exact: true })).toBeVisible();
-  await expect(page.getByText('$760.00', { exact: true })).toBeVisible();
+  await page.getByRole('checkbox', { name: /Reviewed/ }).check();
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /Walnut end table 2 photos/ }).click();
+  await expect(page.locator('.total-line')).toContainText('$760.00');
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Walnut end table', exact: true })).toBeVisible();
-  await expect(page.getByText('Reviewed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /Reviewed/ })).toBeChecked();
   const state = await snapshot(page);
   expect(state.items).toHaveLength(1);
   expect(state.items[0].quantity).toBe(2);
@@ -165,12 +167,13 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   await receiptDialog.getByRole('button', { name: 'Close', exact: true }).click();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: 'artifacts/item-mobile.png', fullPage: true });
+  await backToRoom(page);
   await page.getByRole('link', { name: 'Properties', exact: true }).click();
-  await expect(page.getByText('1 to sort', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 to label', { exact: true })).toBeVisible();
   await expect(page.getByText('Report ready', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: 'artifacts/property-mobile.png', fullPage: true });
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
-  await expect(page.getByText('1 photos still need sorting.', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 photos still need labeling.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Generate PDF', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your PDF is ready.', exact: true })).toBeVisible({
     timeout: 90000,
@@ -201,18 +204,17 @@ test('blank receipts retain originals and quota errors leave prior inventory unc
   await makeItem(page, [1]);
   await backToRoom(page);
   await page.getByRole('button', { name: /Item 1 1 photo/ }).click();
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('Attach image or PDF', { exact: true }).setInputFiles(fixture('blank.png'));
   await expect(page.getByText('Needs manual entry', { exact: true })).toBeVisible({
     timeout: 90000,
   });
   await expect(page.getByLabel('Purchase price per unit (USD)', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Date purchased', { exact: true })).toHaveValue('');
-  await page.getByRole('button', { name: 'Save as draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
+  await page.getByRole('button', { name: /Item 1 1 photo/ }).click();
   const before = await snapshot(page);
   expect(before.items[0].reviewed).toBe(false);
   expect(before.items[0].receipts[0].status).toBe('failed');
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.evaluate(() => {
     const put = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (value: any, key?: IDBValidKey) {
@@ -223,7 +225,8 @@ test('blank receipts retain originals and quota errors leave prior inventory unc
   });
   await page.getByLabel('Item name', { exact: true }).fill('Must not persist');
   await expect(page.getByText(/Not saved: Storage is full/)).toBeVisible();
-  await page.getByRole('button', { name: 'Save reviewed record', exact: true }).click();
+  await page.getByRole('checkbox', { name: /Reviewed/ }).check();
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Storage is full');
   const after = await snapshot(page);
   expect(after.items[0].name).toBe(before.items[0].name);
@@ -357,7 +360,7 @@ test('live photos persist before sorting, zoom crops saved images, and no empty 
   await page.getByRole('button', { name: 'Review latest photo', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Original photo', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Sort photos', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Label photos', exact: true })).toHaveCount(0);
   await expect(zoomToggle).toHaveAttribute('aria-expanded', 'false');
   await page.screenshot({ path: 'artifacts/item-camera-mobile.png' });
   for (const viewport of [
@@ -399,14 +402,14 @@ test('live photos persist before sorting, zoom crops saved images, and no empty 
   await expect(page.getByText(/Live photos use video resolution/)).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Sort photos', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Label photos', exact: true })).toBeVisible();
   expect(
     await page.evaluate(() =>
       (window as any).cameraTracks.every((t: MediaStreamTrack) => t.readyState === 'ended'),
     ),
   ).toBe(true);
   await page.reload();
-  await expect(page.getByText('3 left to sort', { exact: true })).toBeVisible();
+  await expect(page.getByText('3 left to label', { exact: true })).toBeVisible();
   await makeItem(page, [1, 2]);
   await makeItem(page, [1]);
   const state = await snapshot(page);
@@ -477,7 +480,7 @@ test('capture failures do not create items; partial imports retain only saved ph
   await expect(page.locator('.capture-count')).toHaveText('2');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.reload();
-  await expect(page.getByText('2 left to sort', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 left to label', { exact: true })).toBeVisible();
   expect((await snapshot(page)).rooms[0].unsortedPhotos).toHaveLength(2);
   expect((await snapshot(page)).items).toHaveLength(0);
 });
@@ -492,12 +495,12 @@ test('existing unassigned photos still support grouping and undo', async ({ page
   for (let n = 0; n < 2; n++) {
     await page.getByRole('button', { name: 'Overview photo 1', exact: true }).click();
     await page
-      .getByRole('button', { name: 'Move to item photos for sorting', exact: true })
+      .getByRole('button', { name: 'Move to item photos for labeling', exact: true })
       .click();
   }
-  await page.getByRole('button', { name: /2 photos to sort/ }).click();
+  await page.getByRole('button', { name: /2 photos to label/ }).click();
   await makeItem(page, [1, 2]);
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect(page.getByText('2 left to sort', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Undo photo change', exact: true }).click();
+  await expect(page.getByText('2 left to label', { exact: true })).toBeVisible();
   expect((await snapshot(page)).items).toHaveLength(0);
 });

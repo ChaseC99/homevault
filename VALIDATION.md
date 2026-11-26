@@ -2,6 +2,20 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## Photo labeling, editable items, and saved location revision
+
+Verified with **28 unit/integration tests**, the strict TypeScript/production build, and **25 Chromium browser scenarios**. The browser suite uses the production build on an isolated local port and synthetic photos, receipts, serial labels, and locations.
+
+- Tapping one photo opens its name and all item fields in the shared editor. Save returns to the photo grid, with no next-photo navigation. Blank names and unknown details save successfully; draft edits survive reload.
+- Ordinary room item links open editable fields immediately, without an Edit action. Save and Back return to the room; existing detail-review sessions still support Skip and explicit next-item actions.
+- Secondary selection supports grouping, adding photos to an existing item without opening it, and room-overview corrections. The editor imports additional photos, attaches existing room photos, changes the first photo, returns photos to the grid, and removes/restores photos. Undo retains recorded details and does not restore stale reviewed status after subsequent edits.
+- Repeated photo/save taps cannot duplicate records. Failed creation keeps the original unassigned photos. Validation and storage failures retain the editor and draft for retry. Browser Back and app navigation flush drafts before leaving and remain on the editor after failed writes.
+- Receipt image/PDF OCR, serial scanning, receipt previews, offline reload, capture failures, report generation, property/room deletion, and downloaded updates all remain covered by the full browser suite. Restart notices are hidden on the now-editable item pages.
+- The 320 px editor keeps the name input above the sticky Save action without horizontal overflow. Inspected `artifacts/label-editor-320.png` and `artifacts/label-grid-320.png`.
+- Both saved-location displays use **Open in Maps**. The browser test verifies the full-precision coordinate parameter, encoded URL, new-window destination, reload persistence, and removal. The destination is intercepted during the test; native Maps handoff still needs a physical-device check. The link follows Apple's [unified Maps URL format](https://developer.apple.com/documentation/mapkit/unified-map-urls).
+
+No persistent schema or existing route was renamed. Native camera behavior, physical Safari storage, and the other device limits below remain unchanged. The production build retains its existing large-bundle warning.
+
 ## App update revision
 
 Verified against the layout and deletion revision with **28 unit/integration tests**, the production build, and **22 Chromium browser scenarios**.

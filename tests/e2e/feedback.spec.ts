@@ -35,11 +35,12 @@ async function item(page: Page) {
     .setInputFiles([fixture('photo-1.jpg'), fixture('photo-2.jpg')]);
   await expect(page.locator('.capture-count')).toHaveText('2');
   await page.getByRole('button', { name: 'Done', exact: true }).click();
-  await page.getByRole('button', { name: 'Photo 1', exact: true }).click();
-  await page.getByRole('button', { name: 'Photo 2', exact: true }).click();
-  await page.getByRole('button', { name: 'Group 2 photos', exact: true }).click();
-  await page.getByRole('button', { name: 'Name later', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Everything has a place.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Select photos', exact: true }).click();
+  await page.getByRole('button', { name: 'Select photo 1', exact: true }).click();
+  await page.getByRole('button', { name: 'Select photo 2', exact: true }).click();
+  await page.getByRole('button', { name: 'Label 2 photos as one item', exact: true }).click();
+  await page.getByRole('button', { name: 'Save & return to photos', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Every photo has an item.' })).toBeVisible();
   await page.getByRole('button', { name: 'Back to room', exact: true }).click();
   await page.getByRole('button', { name: /Item 1 2 photos/ }).click();
 }
@@ -49,7 +50,11 @@ test('mobile setup keeps dates, pending rooms, and back navigation accessible; G
   context,
 }) => {
   await context.grantPermissions(['geolocation']);
-  await context.setGeolocation({ latitude: 45.52, longitude: -122.68, accuracy: 12 });
+  await context.setGeolocation({
+    latitude: 45.5200123456,
+    longitude: -122.6800987654,
+    accuracy: 12,
+  });
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('./');
   await page.getByRole('button', { name: 'New property', exact: true }).click();
@@ -61,7 +66,22 @@ test('mobile setup keeps dates, pending rooms, and back navigation accessible; G
   await page.getByLabel('Property name', { exact: true }).fill('Location home');
   await page.getByLabel('Street, city, state and ZIP').fill('123 Example Lane');
   await page.getByRole('button', { name: 'Add current location', exact: true }).click();
-  await expect(page.getByText(/GPS: 45.52000, -122.68000/)).toBeVisible();
+  const map = page.getByRole('link', { name: 'Open in Maps', exact: true });
+  await expect(map).toBeVisible();
+  const target = new URL((await map.getAttribute('href'))!);
+  expect(target.origin + target.pathname).toBe('https://maps.apple.com/place');
+  expect(target.searchParams.get('coordinate')).toBe('45.5200123456,-122.6800987654');
+  await expect(map).toHaveAttribute('target', '_blank');
+  await expect(page.getByText(/GPS:/)).toHaveCount(0);
+  // Verify the action opens the exact destination without contacting a mapping service.
+  await context.route('https://maps.apple.com/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: 'Map destination' }),
+  );
+  const popupPromise = page.waitForEvent('popup');
+  await map.click();
+  const popup = await popupPromise;
+  await expect(popup).toHaveURL(target.href);
+  await popup.close();
   await expect(page.getByLabel('Street, city, state and ZIP')).toHaveValue('123 Example Lane');
   await page.getByLabel('Started', { exact: true }).fill('2026-11-21');
   await page.getByLabel('Finished', { exact: true }).fill('2026-11-26');
@@ -76,8 +96,8 @@ test('mobile setup keeps dates, pending rooms, and back navigation accessible; G
   await page.getByRole('button', { name: 'Save property', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Location home', exact: true })).toBeVisible();
   expect((await state(page)).properties[0].location).toEqual({
-    latitude: 45.52,
-    longitude: -122.68,
+    latitude: 45.5200123456,
+    longitude: -122.6800987654,
     accuracy: 12,
   });
   // One home illustration; no image placeholder underneath it.
@@ -97,12 +117,14 @@ test('mobile setup keeps dates, pending rooms, and back navigation accessible; G
   await page.getByRole('button', { name: 'Add 2 rooms', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Location home', exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByText(/GPS: 45.52000/)).toBeVisible();
+  await expect(map).toHaveAttribute('href', target.href);
+  await expect(page.getByText(/45.5200123456/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByRole('button', { name: 'Remove location', exact: true }).click();
   await page.getByRole('button', { name: 'Save property', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Location home', exact: true })).toBeVisible();
   expect((await state(page)).properties[0].location).toBeUndefined();
+  await expect(map).toHaveCount(0);
 });
 
 test('denied location leaves address entry usable', async ({ page }) => {
@@ -127,9 +149,8 @@ test('item editing supports custom categories, photo removal and undo, serial OC
   page,
 }) => {
   await item(page);
-  await expect(page.getByText('Not recorded', { exact: true })).toHaveCount(0);
-  await expect(page.locator('dd').filter({ hasText: /^-$/ })).toHaveCount(9);
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Item name', { exact: true })).toBeEditable();
   expect(
     await page
       .locator('#item-categories option')
@@ -144,10 +165,10 @@ test('item editing supports custom categories, photo removal and undo, serial OC
   expect((await state(page)).items[0].photos).toEqual(initial);
   await page.getByRole('button', { name: 'Remove item photo 2', exact: true }).click();
   await expect(page.locator('.editable-photo')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Save as draft', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Item 1', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByRole('button', { name: /Item 1 1 photo/ }).click();
   await expect(page.getByLabel('Category', { exact: true })).toHaveValue('Collectibles');
   await expect(page.locator('#item-categories option[value="Collectibles"]')).toHaveCount(1);
   await expect(page.locator('.editable-photo')).toHaveCount(1);
@@ -185,7 +206,8 @@ test('item editing supports custom categories, photo removal and undo, serial OC
   await expect(page.getByLabel('Purchase price per unit (USD)', { exact: true })).toHaveValue(
     '760.00',
   );
-  await page.getByRole('button', { name: 'Save as draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
+  await page.getByRole('button', { name: /Item 1 1 photo/ }).click();
   await expect(page.getByRole('button', { name: 'View receipt 1' }).getByRole('img')).toBeVisible();
   await page.getByRole('button', { name: 'View receipt 1' }).click();
   await expect(
