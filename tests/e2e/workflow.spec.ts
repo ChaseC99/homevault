@@ -56,7 +56,9 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   await page.getByLabel('Organizer name', { exact: true }).fill('Alex Organizer');
   await page.getByLabel('Business', { exact: true }).fill('Example Organizing');
   await page.getByRole('button', { name: 'Save organizer information', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Organizer information saved');
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Organizer information saved' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Properties', exact: true }).click();
   await createRoom(page);
   await page.getByRole('button', { name: 'Add overview shots', exact: true }).click();

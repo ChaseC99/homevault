@@ -11,6 +11,7 @@ import {
 import { loadInventory, mutate, errorMessage, deleteRoom, deleteProperty } from './lib/db';
 import { type Inventory, type Property, type Room, stats, money, title } from './lib/model';
 import { checkOffline } from './lib/offline';
+import { useAppUpdates } from './lib/use-app-updates';
 import { PropertyForm, AddRooms, Settings, type Run } from './components/Setup';
 import { Capture, CaptureSetup } from './components/Capture';
 import { Sort } from './components/Sort';
@@ -604,6 +605,7 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
   );
 }
 export default function App() {
+  const updates = useAppUpdates();
   const [data, setData] = useState<Inventory>(),
     [route, setRoute] = useState(location.hash.slice(1) || '/'),
     [error, setError] = useState(''),
@@ -716,7 +718,9 @@ export default function App() {
     screen = <Details key={i.id} data={data} item={i} run={run} session={session} />;
   else if (kind === 'reports') screen = <Reports data={data} initialProperty={key} run={run} />;
   else if (kind === 'settings')
-    screen = <Settings data={data} run={run} offline={offline} retryOffline={ready} />;
+    screen = (
+      <Settings data={data} run={run} offline={offline} retryOffline={ready} updates={updates} />
+    );
   else if (!kind) screen = <Properties data={data} />;
   else
     screen = (
@@ -813,7 +817,7 @@ export default function App() {
           </a>
         </nav>
       )}
-      <UpdateNotice visible={['', 'property', 'room'].includes(kind) && !toast} />
+      <UpdateNotice visible={['', 'property', 'room'].includes(kind) && !toast} updates={updates} />
       {toast && !cameraScreen && (
         <div className="toast" role="status">
           <CheckCircle2 size={18} />

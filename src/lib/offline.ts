@@ -101,6 +101,75 @@ export function activateUpdate(worker: ServiceWorker): Promise<void> {
   });
 }
 
+export async function checkForUpdates(downloading: () => void): Promise<ServiceWorker | undefined> {
+  if (!('serviceWorker' in navigator) || !import.meta.env.PROD)
+    throw Error('Update checks are available in the published app.');
+  const registration = await appRegistration();
+  if (registration.waiting) return registration.waiting;
+  if (!navigator.onLine) throw Error('You’re offline. Connect to the internet and try again.');
+  const previous = registration.active;
+  return new Promise((resolve, reject) => {
+    let candidate: ServiceWorker | null = null;
+    let checked = false;
+    let finished = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      registration.removeEventListener('updatefound', found);
+      candidate?.removeEventListener('statechange', inspect);
+    };
+    const finish = (worker?: ServiceWorker, error?: Error) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve(worker);
+    };
+    const inspect = () => {
+      if (registration.waiting) return finish(registration.waiting);
+      if (candidate?.state === 'installed' && previous) return finish(candidate);
+      if (candidate?.state === 'redundant')
+        return finish(
+          undefined,
+          Error('The update could not finish downloading. Please try again.'),
+        );
+      if (candidate?.state === 'activated') return finish(previous ? candidate : undefined);
+      if (checked && !candidate) return finish();
+    };
+    const found = () => {
+      const worker = registration.installing;
+      if (worker && worker !== candidate) {
+        candidate?.removeEventListener('statechange', inspect);
+        candidate = worker;
+        candidate.addEventListener('statechange', inspect);
+        downloading();
+      }
+      inspect();
+    };
+    const timer = setTimeout(() => {
+      finish(undefined, Error('The update check timed out. Check your connection and try again.'));
+    }, 120000);
+    registration.addEventListener('updatefound', found);
+    if (registration.installing) {
+      checked = true;
+      found();
+    } else {
+      void registration
+        .update()
+        .then(() => {
+          if (finished) return;
+          checked = true;
+          found();
+        })
+        .catch(() => {
+          finish(
+            undefined,
+            Error('Could not check for updates. Check your connection and try again.'),
+          );
+        });
+    }
+  });
+}
+
 function activeWorker(registration: ServiceWorkerRegistration): Promise<ServiceWorker> {
   if (registration.active) return Promise.resolve(registration.active);
   const worker = registration.installing ?? registration.waiting;

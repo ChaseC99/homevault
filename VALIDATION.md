@@ -2,6 +2,15 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## Settings update checks and version display
+
+Passed **27 unit/integration tests**, the production build at `/homevault/`, and all **19 Chromium scenarios** (18 in the full run, then the offline OCR/PDF workflow after narrowing its saved-message locator for the additional update status).
+
+- Settings shows the release version, build commit, and build time embedded in the running app. Local changes are marked `-modified`; GitHub builds use the deployed commit SHA.
+- Check for updates reports checking, downloading, current, ready to restart, and failure/retry states. The two-release server fixture holds the update script and asset download separately to verify the progress states. Offline checks and failed downloads cannot report the app as current; retry can recover.
+- The displayed build remains old until Restart. Restart preserves inventory and original-photo bytes, works offline after downloading, and saves edited organizer information first. A simulated storage failure keeps the organizer draft and old version on screen until retry succeeds. Other open editing windows are not automatically reloaded.
+- The Settings version and update card were checked at 320 px. Installed phone behavior still needs hardware verification.
+
 ## Local test consolidation
 
 Tests run locally only. GitHub Actions installs dependencies, refreshes bundled assets, builds, and deploys Pages; it does not install browsers or execute tests. The older CI descriptions below are historical.

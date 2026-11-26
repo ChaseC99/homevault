@@ -1,6 +1,8 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { type Inventory, type Property, type Room, id, newRoom, roomTypes } from '../lib/model';
 import { mutate, requestPersistence, storageInfo } from '../lib/db';
+import type { AppUpdates } from '../lib/use-app-updates';
+import { UpdateSettings } from './UpdateNotice';
 import { prepareAsset } from '../lib/media';
 import { LocateFixed } from 'lucide-react';
 import { LocationLink } from './LocationLink';
@@ -280,15 +282,27 @@ export function Settings({
   run,
   offline,
   retryOffline,
+  updates,
 }: {
   data: Inventory;
   run: Run;
   offline: string;
   retryOffline: () => void;
+  updates: AppUpdates;
 }) {
   const [form, setForm] = useState(data.organizer),
     [storage, setStorage] = useState<Awaited<ReturnType<typeof storageInfo>>>();
   const check = () => storageInfo().then(setStorage);
+  const restarting = updates.status === 'restarting';
+  const saveOrganizer = async () => {
+    if (
+      (Object.keys(form) as (keyof typeof form)[]).every((key) => form[key] === data.organizer[key])
+    )
+      return;
+    await mutate((d) => {
+      d.organizer = form;
+    });
+  };
   useEffect(() => {
     check().catch(() => {});
   }, []);
@@ -299,18 +313,23 @@ export function Settings({
         <span className="eyebrow">YOUR WORKSPACE</span>
         <h1>Organizer & device</h1>
         <p>Your name and business appear on inventory reports.</p>
+        <p aria-label="App version">
+          <small>
+            Version {__APP_BUILD__.version} · Build {__APP_BUILD__.revision}
+            <br />
+            Built{' '}
+            <time dateTime={__APP_BUILD__.builtAt}>
+              {new Date(__APP_BUILD__.builtAt).toLocaleString()}
+            </time>
+          </small>
+        </p>
       </header>
+      <UpdateSettings updates={updates} beforeRestart={saveOrganizer} />
       <form
         className="card form-card"
         onSubmit={async (e) => {
           e.preventDefault();
-          await run(
-            () =>
-              mutate((d) => {
-                d.organizer = form;
-              }),
-            'Organizer information saved',
-          );
+          await run(saveOrganizer, 'Organizer information saved');
         }}
       >
         {(['name', 'business', 'email', 'phone'] as const).map((key) => (
@@ -322,13 +341,16 @@ export function Settings({
           >
             <input
               value={form[key]}
+              disabled={restarting}
               maxLength={180}
               type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
               onChange={(e) => setForm({ ...form, [key]: e.target.value })}
             />
           </Field>
         ))}
-        <Button type="submit">Save organizer information</Button>
+        <Button type="submit" disabled={restarting}>
+          Save organizer information
+        </Button>
       </form>
       <section className="card form-card">
         <h2>Ready when you are</h2>

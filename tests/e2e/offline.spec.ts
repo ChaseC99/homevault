@@ -1,24 +1,32 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { createServer, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { waitForOffline } from './helpers';
+import { waitForOffline, failWrites, restoreWrites } from './helpers';
 
 type UpdateServer = {
   url: string;
   version: number;
   gate: 'ready' | 'hold' | 'fail';
   release: () => void;
+  holdCheck: boolean;
+  releaseCheck: () => void;
 };
 
 // Serve two real releases without rebuilding or modifying the shared preview files.
 const test = base.extend<{ updateServer: UpdateServer }>({
   updateServer: async ({}, use) => {
     const pending: ServerResponse[] = [];
+    const pendingChecks: (() => void)[] = [];
     const state: UpdateServer = {
       url: '',
       version: 1,
       gate: 'ready',
+      holdCheck: false,
+      releaseCheck() {
+        state.holdCheck = false;
+        for (const resume of pendingChecks.splice(0)) resume();
+      },
       release() {
         state.gate = 'ready';
         for (const response of pending.splice(0)) response.end('Downloaded');
@@ -54,6 +62,8 @@ const test = base.extend<{ updateServer: UpdateServer }>({
         return;
       }
       try {
+        if (relative === 'sw.js' && state.holdCheck)
+          await new Promise<void>((resolve) => pendingChecks.push(resolve));
         let body: Buffer | string = await readFile(path.join(root, relative));
         if (relative === 'sw.js') {
           body = body
@@ -67,6 +77,10 @@ const test = base.extend<{ updateServer: UpdateServer }>({
           body = body
             .toString()
             .replace('</head>', `<meta name="test-release" content="${state.version}"></head>`);
+        } else if (relative.startsWith('assets/') && relative.endsWith('.js')) {
+          body = body
+            .toString()
+            .replace(/revision:"[^"]+"/, `revision:"test-release-${state.version}"`);
         }
         response.setHeader(
           'Content-Type',
@@ -82,6 +96,7 @@ const test = base.extend<{ updateServer: UpdateServer }>({
     try {
       await use(state);
     } finally {
+      state.releaseCheck();
       state.release();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -89,7 +104,7 @@ const test = base.extend<{ updateServer: UpdateServer }>({
   },
 });
 
-const notice = (page: Page) => page.getByRole('region', { name: 'App update' });
+const notice = (page: Page) => page.getByRole('region', { name: 'App update', exact: true });
 const release = (page: Page) => page.locator('meta[name="test-release"]');
 async function inventory(page: Page) {
   return page.evaluate(async () => {
@@ -191,39 +206,82 @@ test('failed downloads keep the current version and a later manual check can fin
   page,
   updateServer,
 }) => {
-  await page.goto(updateServer.url);
+  await page.goto(`${updateServer.url}#/settings`);
   await waitForOffline(page);
+  const updates = page.getByRole('region', { name: 'App updates', exact: true });
   updateServer.version = 2;
   updateServer.gate = 'fail';
-  await page.evaluate(async () => {
-    const registration = (await navigator.serviceWorker.getRegistration())!;
-    await registration.update();
-    const worker = registration.installing;
-    if (worker && worker.state !== 'redundant')
-      await new Promise<void>((resolve) => {
-        worker.addEventListener('statechange', () => {
-          if (worker.state === 'redundant') resolve();
-        });
-      });
-  });
+  await updates.getByRole('button', { name: 'Check for updates' }).click();
+  await expect(updates.getByRole('alert')).toContainText('Check failed');
+  await expect(updates.getByRole('alert')).toContainText('could not finish downloading');
   await expect(notice(page)).toHaveCount(0);
   await expect(release(page)).toHaveAttribute('content', '1');
   await waitForOffline(page);
   updateServer.version = 3;
   updateServer.gate = 'ready';
-  await page.getByRole('button', { name: 'Organizer and device settings' }).click();
-  await page.getByRole('button', { name: 'Check offline readiness' }).click();
-  await expect
-    .poll(
-      () => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.waiting),
-      { timeout: 90000 },
-    )
-    .toBe(true);
-  await page.getByRole('button', { name: 'Properties', exact: true }).click();
-  await expect(notice(page)).toBeVisible();
-  await notice(page).getByRole('button', { name: 'Restart', exact: true }).click();
+  await updates.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(updates.getByRole('status')).toHaveText('Update available', { timeout: 90000 });
+  await updates.getByRole('button', { name: 'Restart', exact: true }).click();
   await expect(release(page)).toHaveAttribute('content', '3');
   await expect(notice(page)).toHaveCount(0);
+});
+
+test('Settings reports check and download states, saves organizer edits before restarting, and displays the running build', async ({
+  page,
+  context,
+  updateServer,
+}) => {
+  await page.goto(`${updateServer.url}#/settings`);
+  await waitForOffline(page);
+  const updates = page.getByRole('region', { name: 'App updates', exact: true });
+  const version = page.getByLabel('App version', { exact: true });
+  await expect(version).toContainText('Version 0.1.0 · Build test-release-1');
+  await updates.getByRole('button', { name: 'Check for updates' }).click();
+  await expect(updates.getByRole('status')).toHaveText('You’re up to date.');
+  await context.setOffline(true);
+  await updates.getByRole('button', { name: 'Check for updates' }).click();
+  await expect(updates.getByRole('alert')).toContainText('Check failed');
+  await expect(updates.getByRole('alert')).toContainText('You’re offline');
+  await context.setOffline(false);
+  await updates.getByRole('button', { name: 'Retry' }).click();
+  await expect(updates.getByRole('status')).toHaveText('You’re up to date.');
+
+  updateServer.version = 2;
+  updateServer.holdCheck = true;
+  updateServer.gate = 'hold';
+  await updates.getByRole('button', { name: 'Check for updates' }).click();
+  await expect(updates.getByRole('status')).toHaveText('Checking for updates…');
+  await expect(updates.getByRole('button')).toBeDisabled();
+  updateServer.releaseCheck();
+  await expect(updates.getByRole('status')).toHaveText('Downloading update…');
+  await expect(updates.getByRole('button')).toBeDisabled();
+  await expect(page.getByText('Ready offline', { exact: true })).toBeVisible();
+  await expect(version).toContainText('Build test-release-1');
+  updateServer.release();
+  await expect(updates.getByRole('status')).toHaveText('Update available', { timeout: 90000 });
+  await page.setViewportSize({ width: 320, height: 568 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await mkdir('artifacts', { recursive: true });
+  await page.screenshot({ path: 'artifacts/settings-update-ready.png' });
+
+  await page.getByLabel('Organizer name', { exact: true }).fill('Saved before restart');
+  await failWrites(page);
+  await updates.getByRole('button', { name: 'Restart' }).click();
+  await expect(updates.getByRole('alert')).toContainText('Restart failed');
+  await expect(updates.getByRole('alert')).toContainText('Storage is full');
+  await expect(page.getByLabel('Organizer name', { exact: true })).toHaveValue(
+    'Saved before restart',
+  );
+  await expect(version).toContainText('Build test-release-1');
+  await restoreWrites(page);
+  await context.setOffline(true);
+  await updates.getByRole('button', { name: 'Restart' }).click();
+  await expect(release(page)).toHaveAttribute('content', '2');
+  await expect(version).toContainText('Build test-release-2');
+  await expect(page.getByLabel('Organizer name', { exact: true })).toHaveValue(
+    'Saved before restart',
+  );
+  await expect(updates.getByRole('button', { name: 'Check for updates' })).toBeEnabled();
 });
 
 test('installation respects the deployment path and repairs missing offline assets', async ({
