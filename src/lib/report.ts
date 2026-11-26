@@ -304,7 +304,7 @@ export async function generateReport(
         { size: 12, bolded: true },
       );
       paragraph(
-        'These photos have not been grouped into item records. No quantities or values have been inferred.',
+        'These photos have not been labeled as items. No quantities or values have been inferred.',
         { size: 9, color: muted },
       );
       if (options.itemPhotos) await photos(room.unsortedPhotos, `${room.name} · unassigned photos`);

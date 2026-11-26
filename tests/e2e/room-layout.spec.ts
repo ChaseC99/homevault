@@ -219,10 +219,10 @@ test('room reference layout supports empty, covered and pending states, cover ch
   await page.reload();
   await page.getByRole('button', { name: 'Overview photo 1', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Current cover', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Move to item photos for sorting' }).click();
+  await page.getByRole('button', { name: 'Move to item photos for labeling' }).click();
   await expect(page.getByRole('heading', { name: 'Overview · 3' })).toBeVisible();
   await expect(page.locator('.room-hero img')).toBeVisible();
-  await expect(page.getByRole('button', { name: /4 photos to sort/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /4 photos to label/ })).toBeVisible();
   await page.getByRole('button', { name: 'Room options', exact: true }).click();
   await page.getByRole('button', { name: 'Rename room', exact: true }).click();
   await page.getByLabel('Room name', { exact: true }).fill('Family Room');

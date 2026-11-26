@@ -3,6 +3,7 @@ import { type Inventory, type Property, type Room, id, newRoom, roomTypes } from
 import { mutate, requestPersistence, storageInfo } from '../lib/db';
 import { prepareAsset } from '../lib/media';
 import { LocateFixed } from 'lucide-react';
+import { LocationLink } from './LocationLink';
 import { Back, Button, Camera, Field, FilePicker, Photo, Plus, X, go } from './shared';
 export type Run = (work: () => Promise<unknown>, message?: string) => Promise<boolean>;
 export function PropertyForm({
@@ -136,10 +137,7 @@ export function PropertyForm({
           {locationError && <p role="alert">{locationError}</p>}
           {form.location && (
             <div className="location-summary" role="status">
-              <small>
-                GPS: {form.location.latitude.toFixed(5)}, {form.location.longitude.toFixed(5)} ·
-                accuracy about {Math.round(form.location.accuracy)} m
-              </small>
+              <LocationLink location={form.location} />
               <Button kind="text" onClick={() => setForm((f) => ({ ...f, location: undefined }))}>
                 Remove location
               </Button>
