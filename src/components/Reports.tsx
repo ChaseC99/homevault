@@ -109,17 +109,17 @@ export function Reports({
                     cover: 'Cover page',
                     roomPhotos: 'Room overview photos',
                     itemPhotos: 'Item & unassigned photos',
-                    receipts: 'Receipts appendix',
+                    receipts: 'Receipts',
                   }[key]
                 }
               </strong>
               <small>
                 {
                   {
-                    cover: 'Exterior photo, client, policy and organizer',
+                    cover: 'Exterior photo, homeowner, property address and organizer',
                     roomPhotos: 'The wider view of every room',
                     itemPhotos: 'Every photo, including partial records',
-                    receipts: 'Image receipts and every page of receipt PDFs',
+                    receipts: `${s.items.reduce((count, item) => count + item.receipts.length, 0)} receipts, shown with each item`,
                   }[key]
                 }
               </small>

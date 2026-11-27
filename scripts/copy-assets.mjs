@@ -1,4 +1,5 @@
 import { cp, mkdir, readdir } from 'node:fs/promises';
+import './report-fonts.mjs';
 await mkdir('public/ocr', { recursive: true });
 await cp('node_modules/tesseract.js/dist/worker.min.js', 'public/ocr/worker.min.js');
 for (const f of await readdir('node_modules/tesseract.js-core'))

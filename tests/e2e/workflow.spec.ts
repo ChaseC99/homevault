@@ -39,7 +39,7 @@ async function backToRoom(page: Page) {
     .getByRole('button', { name: 'Living Room', exact: true })
     .click();
 }
-test('complete offline workflow, real OCR, corrected unit price and complete PDF appendix', async ({
+test('complete offline workflow, real OCR, corrected unit price and item receipt pages', async ({
   page,
   context,
   baseURL,
@@ -179,6 +179,8 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   await expect(page.getByText('1 to label', { exact: true })).toBeVisible();
   await expect(page.getByText('Report ready', { exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
+  await expect(page.getByText('2 receipts, shown with each item', { exact: true })).toBeVisible();
+  await expect(page.getByText('Receipts appendix', { exact: true })).toHaveCount(0);
   await expect(page.getByText('1 photos still need labeling.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Generate PDF', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your PDF is ready.', exact: true })).toBeVisible({
@@ -189,7 +191,7 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
   const download = await wait;
   await download.saveAs('artifacts/validated-inventory.pdf');
   const pdf = await PDFDocument.load(await readFile('artifacts/validated-inventory.pdf'));
-  // Cover, one room, one item, an image receipt, and both pages of the PDF receipt.
+  // Cover, room tables, item pages with all three receipt pages, and unassigned photos.
   expect(pdf.getPageCount()).toBeGreaterThanOrEqual(6);
   for (const p of pdf.getPages()) {
     expect(p.getWidth()).toBe(612);

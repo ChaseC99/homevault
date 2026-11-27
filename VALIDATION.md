@@ -2,6 +2,15 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## Claim-ready PDF layout and original images
+
+Passed **31 unit/integration tests**, the production build, strict TypeScript checks for the changed tests, formatting, and diff checks. The targeted Chromium offline workflow passes with real receipt OCR, the renamed Receipts control, and a downloaded report while networking is disabled.
+
+- Cover, room tables, and item pages follow screens 10–12b: US letter, 40 pt vertical and 48 pt horizontal margins, MM-DD-YYYY report dates, three cover columns, no printed insurance block, no receipt appendix, and page-specific footers. Insurance fields remain in the model.
+- Tested landscape, single portrait, two portraits, portrait plus receipt, mixed continuation pages, and a single remaining image. Every item follows its room table in table order; PDF receipt pages follow remaining capture-order photos. Drafts retain their photos and missing fields use dashes. Long notes continue without being discarded or overlapping footers.
+- PDF inspection verifies all page dimensions and text bounds, original 3200 × 2400 JPEG dimensions and byte-for-byte payloads, reuse of image objects, and embedded PDF receipt page forms. Rotated camera JPEGs, rotated/blank receipt PDF pages, table pagination, and excluded photo/receipt options are covered.
+- Poppler renders of all 16 pages in `artifacts/report-layouts.pdf` were visually inspected, along with the camera/PDF rotation examples in `artifacts/report-orientation.pdf`. Full-size item and receipt pages confirm mats, equal-height portrait pairs, uncropped images, Space Grotesk headings, monospace serials, and wrapped notes. These files contain synthetic data.
+
 ## Labeling completion and room heading
 
 Passed **27 unit/integration tests**, the production build, and all **21 Chromium browser scenarios**, plus strict TypeScript, formatting, and diff checks.
