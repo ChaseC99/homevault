@@ -7,6 +7,8 @@ import {
   ArrowUpRight,
   CheckCircle2,
   MoreHorizontal,
+  SlidersHorizontal,
+  ArrowUpDown,
 } from 'lucide-react';
 import { loadInventory, mutate, errorMessage, deleteRoom, deleteProperty } from './lib/db';
 import { type Inventory, type Property, type Room, stats, money, title } from './lib/model';
@@ -21,12 +23,15 @@ import { LocationLink } from './components/LocationLink';
 import { Reports } from './components/Reports';
 import { DeleteConfirmation } from './components/DeleteConfirmation';
 import { UpdateNotice } from './components/UpdateNotice';
+import { Sheet } from './components/Sheet';
+import { prepareAsset } from './lib/media';
 import {
   Back,
   Button,
   Badge,
   Empty,
   Photo,
+  FilePicker,
   usePhotoViewport,
   PageActions,
   Camera,
@@ -162,10 +167,11 @@ function Properties({ data }: { data: Inventory }) {
     </>
   );
 }
-function PropertyView({ data, property }: { data: Inventory; property: Property }) {
+function PropertyView({ data, property, run }: { data: Inventory; property: Property; run: Run }) {
   const s = stats(data, property.id);
   const [options, setOptions] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [addingCover, setAddingCover] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (options) dialog.current?.showModal();
@@ -187,10 +193,28 @@ function PropertyView({ data, property }: { data: Inventory; property: Property 
       <div className="property-cover">
         <Photo id={property.coverPhoto} className="cover" placeholder={null} />
         {!property.coverPhoto && (
-          <span className="cover-label">
+          <div className="cover-label">
             <House size={44} />
-            Your exterior photo goes here
-          </span>
+            <FilePicker
+              label={addingCover ? 'Adding cover photo…' : 'Add cover photo'}
+              icon={<Plus size={18} />}
+              disabled={addingCover}
+              onFiles={async (files) => {
+                if (!files[0] || addingCover) return;
+                setAddingCover(true);
+                await run(async () => {
+                  const asset = await prepareAsset(files[0], files[0].name);
+                  await mutate(
+                    (d) => {
+                      d.properties.find((p) => p.id === property.id)!.coverPhoto = asset.id;
+                    },
+                    [asset],
+                  );
+                }, 'Cover photo added');
+                setAddingCover(false);
+              }}
+            />
+          </div>
         )}
       </div>
       <header className="row align-start">
@@ -315,15 +339,57 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   usePhotoViewport(!!viewer);
-  const [filter, setFilter] = useState<'all' | 'needs'>('all');
+  const [filter, setFilter] = useState('all');
+  const [category, setCategory] = useState('');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('review');
+  const [sheet, setSheet] = useState<'filter' | 'sort'>();
   const [name, setName] = useState(room.name);
   const [busy, setBusy] = useState(false);
   const optionsDialog = useRef<HTMLDialogElement>(null);
   const cover = room.roomPhotos[0];
   const documentedValue = money(s.total).replace(/\.00$/, '');
+  const categories = Array.from(
+    new Map(
+      s.items
+        .map((item) => item.category.trim())
+        .filter(Boolean)
+        .map((value) => [value.toLowerCase(), value]),
+    ).values(),
+  ).sort((a, b) => a.localeCompare(b));
+  const filterCount = Number(filter !== 'all') + Number(category !== '');
   const visibleItems = [...s.items]
-    .filter((item) => filter === 'all' || !item.reviewed)
-    .sort((a, b) => Number(a.reviewed) - Number(b.reviewed));
+    .filter(
+      (item) =>
+        (filter === 'all' || (filter === 'reviewed' ? item.reviewed : !item.reviewed)) &&
+        (!category ||
+          (category === '__none'
+            ? !item.category.trim()
+            : item.category.trim().toLowerCase() === category.toLowerCase())) &&
+        [title(item), item.category, item.brand, item.model, item.serialNumber]
+          .join(' ')
+          .toLowerCase()
+          .includes(search.trim().toLowerCase()),
+    )
+    .sort((a, b) => {
+      const byName = () =>
+        title(a).localeCompare(title(b), undefined, { numeric: true, sensitivity: 'base' });
+      if (sort === 'review') return Number(a.reviewed) - Number(b.reviewed);
+      if (sort === 'name-desc') return -byName();
+      if (sort.startsWith('price')) {
+        if (a.unitPriceCents === null) return b.unitPriceCents === null ? byName() : 1;
+        if (b.unitPriceCents === null) return -1;
+        return (a.unitPriceCents - b.unitPriceCents) * (sort === 'price-desc' ? -1 : 1) || byName();
+      }
+      if (sort.startsWith('quantity'))
+        return (a.quantity - b.quantity) * (sort === 'quantity-desc' ? -1 : 1) || byName();
+      return byName();
+    });
+  function clearFilters() {
+    setFilter('all');
+    setCategory('');
+    setSearch('');
+  }
   const hasPhotos =
     room.roomPhotos.length +
       s.unsorted +
@@ -401,10 +467,20 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
 
         <section className="room-inventory" aria-label="Room items">
           <div className="section-head room-items-heading">
-            <h2>Items</h2>
-            <span aria-label={`${s.items.length} items, ${documentedValue} documented`}>
-              {s.items.length} · {documentedValue}
-            </span>
+            <h2>
+              Items
+              <span
+                className="room-item-count"
+                role="status"
+                aria-label={`${visibleItems.length} of ${s.items.length} items`}
+              >
+                {visibleItems.length}
+                {filterCount || search ? ` of ${s.items.length}` : ''}
+              </span>
+            </h2>
+            <Button kind="soft" onClick={() => go(`/capture/${room.id}`)}>
+              <Plus size={18} /> Add Item
+            </Button>
           </div>
           {s.unsorted > 0 && (
             <div className="room-unlabeled">
@@ -421,27 +497,33 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
             </div>
           )}
           <div className="room-item-controls">
-            <div className="room-filters" role="group" aria-label="Filter items">
-              <button aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>
-                All {s.items.length}
+            <div className="search room-search">
+              <Search size={19} aria-hidden="true" />
+              <input
+                type="search"
+                aria-label="Search items"
+                placeholder="Search items"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <button
+                className={`search-action ${filterCount ? 'is-active' : ''}`}
+                aria-label="Filter items"
+                aria-haspopup="dialog"
+                onClick={() => setSheet('filter')}
+              >
+                <SlidersHorizontal size={20} />
+                {!!filterCount && <span className="filter-count">{filterCount}</span>}
               </button>
               <button
-                className="needs-filter"
-                aria-pressed={filter === 'needs'}
-                onClick={() => setFilter('needs')}
+                className={`search-action ${sort !== 'review' ? 'is-active' : ''}`}
+                aria-label="Sort items"
+                aria-haspopup="dialog"
+                onClick={() => setSheet('sort')}
               >
-                Needs details {s.needs}
+                <ArrowUpDown size={20} />
               </button>
             </div>
-            {s.needs > 0 && (
-              <button
-                className="start-details"
-                onClick={() => go(`/details/${s.items.find((item) => !item.reviewed)!.id}?session`)}
-              >
-                Start details
-                <ChevronRight size={16} aria-hidden="true" />
-              </button>
-            )}
           </div>
           {visibleItems.length ? (
             <div className="card list room-items">
@@ -466,12 +548,12 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
                 </button>
               ))}
             </div>
-          ) : filter === 'needs' && s.items.length ? (
+          ) : s.items.length ? (
             <div className="empty room-empty">
-              <h3>All items reviewed</h3>
-              <p>There are no items needing details.</p>
-              <Button kind="secondary" onClick={() => setFilter('all')}>
-                Show all items
+              <h3>No matching items</h3>
+              <p>Try another search or change your filters.</p>
+              <Button kind="secondary" onClick={clearFilters}>
+                Clear search and filters
               </Button>
             </div>
           ) : (
@@ -485,6 +567,88 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
           )}
         </section>
       </div>
+      {sheet && (
+        <Sheet
+          title={sheet === 'filter' ? 'Filter items' : 'Sort items'}
+          onClose={() => setSheet(undefined)}
+        >
+          {sheet === 'filter' ? (
+            <>
+              <fieldset className="sheet-choices">
+                <legend>Review status</legend>
+                {[
+                  ['all', 'All items'],
+                  ['needs', 'Needs review'],
+                  ['reviewed', 'Reviewed'],
+                ].map(([value, label]) => (
+                  <label className="sheet-choice" key={value}>
+                    <input
+                      type="radio"
+                      name="review-filter"
+                      value={value}
+                      checked={filter === value}
+                      onChange={() => setFilter(value)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </fieldset>
+              <label className="field">
+                Category
+                <select value={category} onChange={(event) => setCategory(event.target.value)}>
+                  <option value="">All categories</option>
+                  <option value="__none">Uncategorized</option>
+                  {categories.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                kind="text"
+                onClick={() => {
+                  setFilter('all');
+                  setCategory('');
+                }}
+              >
+                Reset filters
+              </Button>
+              <Button onClick={() => setSheet(undefined)}>
+                Show {visibleItems.length} {visibleItems.length === 1 ? 'item' : 'items'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <fieldset className="sheet-choices">
+                <legend className="sr-only">Sort order</legend>
+                {[
+                  ['review', 'Needs review first'],
+                  ['name-asc', 'Name: A to Z'],
+                  ['name-desc', 'Name: Z to A'],
+                  ['price-asc', 'Price: low to high'],
+                  ['price-desc', 'Price: high to low'],
+                  ['quantity-asc', 'Quantity: low to high'],
+                  ['quantity-desc', 'Quantity: high to low'],
+                ].map(([value, label]) => (
+                  <label className="sheet-choice" key={value}>
+                    <input
+                      type="radio"
+                      name="item-sort"
+                      value={value}
+                      checked={sort === value}
+                      onChange={() => setSort(value)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </fieldset>
+              <small>Price is per unit. Items without a price appear last.</small>
+              <Button onClick={() => setSheet(undefined)}>Done</Button>
+            </>
+          )}
+        </Sheet>
+      )}
       <dialog
         ref={optionsDialog}
         className="options-dialog"
@@ -606,6 +770,7 @@ function RoomView({ data, room, run }: { data: Inventory; room: Room; run: Run }
 }
 export default function App() {
   const updates = useAppUpdates();
+  const navigationToast = useRef<{ route: string; message: string } | undefined>(undefined);
   const [data, setData] = useState<Inventory>(),
     [route, setRoute] = useState(location.hash.slice(1) || '/'),
     [error, setError] = useState(''),
@@ -648,8 +813,12 @@ export default function App() {
         return;
       }
       currentURL = destination;
-      setRoute(new URL(destination).hash.slice(1) || '/');
-      setToast('');
+      const destinationRoute = new URL(destination).hash.slice(1) || '/';
+      setRoute(destinationRoute);
+      setToast(
+        navigationToast.current?.route === destinationRoute ? navigationToast.current.message : '',
+      );
+      navigationToast.current = undefined;
       setScrolled(false);
       window.scrollTo(0, 0);
     };
@@ -695,7 +864,8 @@ export default function App() {
     screen = <Empty title="Opening your Homevault…">Loading records from this device.</Empty>;
   else if (kind === 'new' || (kind === 'edit-property' && p))
     screen = <PropertyForm key={key ?? 'new'} data={data} property={p} run={run} />;
-  else if (kind === 'property' && p) screen = <PropertyView key={p.id} data={data} property={p} />;
+  else if (kind === 'property' && p)
+    screen = <PropertyView key={p.id} data={data} property={p} run={run} />;
   else if (kind === 'rooms' && p) screen = <AddRooms data={data} property={p} run={run} />;
   else if (kind === 'room' && r) screen = <RoomView key={r.id} data={data} room={r} run={run} />;
   else if (kind === 'capture' && r)
@@ -712,6 +882,11 @@ export default function App() {
         room={r}
         run={run}
         editingItemId={params.get('item') ?? undefined}
+        onComplete={(message) => {
+          const destination = `/room/${r.id}`;
+          navigationToast.current = { route: destination, message };
+          location.replace(`#${destination}`);
+        }}
       />
     );
   else if ((kind === 'details' || kind === 'item') && i)

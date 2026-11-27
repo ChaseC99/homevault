@@ -164,6 +164,10 @@ test('camera follows room and property context, and the picker clears a room whe
   await expect(page.locator('.header-meta')).toHaveCount(0);
   await expect(page.getByText('Development preview', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: /Nguyen residence/ }).click();
+  await page.getByLabel('Add cover photo', { exact: true }).setInputFiles(fixture('photo-3.jpg'));
+  await expect(page.locator('.property-cover img')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.property-cover img')).toBeVisible();
   await expect(page.getByText('Address not recorded')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Take photos at Nguyen residence' }).click();
@@ -205,7 +209,7 @@ test('rooms support empty and populated inventory, cover changes, and rename', a
   await expect(page.locator('.room-overview-heading > span')).toHaveText('4 photos');
   await expect(page.locator('.cover-badge')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Label', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start details', exact: true })).toBeVisible();
+  await expect(page.locator('.room-items-heading .room-item-count')).toHaveText('6');
   await expect(page.locator('.room-items .list-row').first()).toContainText('Sofa');
   await expect(page.locator('.room-items .list-row').last()).toContainText('Reviewed chair');
   await expect(page.locator('.room-heading p')).toHaveText('6 items · $9,870 documented');
@@ -275,39 +279,30 @@ test('room filters and actions use live inventory and enter the full labeling an
   await seed(page);
   await populate(page);
   await page.goto('./#/room/living');
-  const all = page.getByRole('button', { name: 'All 6', exact: true });
-  const needs = page.getByRole('button', { name: 'Needs details 5', exact: true });
-  await expect(all).toHaveAttribute('aria-pressed', 'true');
-  await needs.focus();
-  await page.keyboard.press('Enter');
-  await expect(needs).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Filter items', exact: true }).click();
+  const filterSheet = page.getByRole('dialog', { name: 'Filter items', exact: true });
+  await expect(filterSheet.getByRole('radio', { name: 'All items', exact: true })).toBeChecked();
+  await filterSheet.getByRole('radio', { name: 'Needs review', exact: true }).check();
+  await filterSheet.getByRole('button', { name: 'Show 5 items', exact: true }).click();
   await expect(page.locator('.room-items .list-row')).toHaveCount(5);
+  await expect(page.locator('.room-items-heading .room-item-count')).toHaveText('5 of 6');
   await expect(page.locator('.room-items')).not.toContainText('Reviewed chair');
-  await all.click();
+  await page.getByRole('button', { name: 'Filter items', exact: true }).click();
+  await filterSheet.getByRole('button', { name: 'Reset filters' }).click();
+  await filterSheet.getByRole('button', { name: 'Show 6 items', exact: true }).click();
   await expect(page.locator('.room-items .list-row')).toHaveCount(6);
-  await page.getByRole('button', { name: 'Start details', exact: true }).click();
-  await expect(page).toHaveURL(/\/details\/item-1\?session$/);
-  await expect(page.getByLabel('Item name', { exact: true })).toHaveValue('Sofa');
-  const drafts = ['Sofa', 'End table', 'Coffee table', 'Floor lamp', 'Area rug'];
-  for (const name of drafts) {
-    await page.getByLabel('Notes / additional information').fill(`Reviewed draft: ${name}`);
-    await page.getByRole('button', { name: 'Skip', exact: true }).click();
-  }
-  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
-  const saved = (await snapshot(page)).items.filter((item) => !item.reviewed);
-  expect(saved.map((item) => item.notes)).toEqual(drafts.map((name) => `Reviewed draft: ${name}`));
   await page.locator('.room-items .list-row').filter({ hasText: 'Sofa' }).click();
   await expect(page).toHaveURL(/\/item\/item-1$/);
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await page.getByLabel('Item name', { exact: true }).fill('Blue ottoman');
   await page.getByLabel('Purchase price per unit (USD)', { exact: true }).fill('125.25');
   await page.getByLabel('Quantity', { exact: true }).fill('2');
-  await expect(page.getByRole('button', { name: 'Add item photos', exact: true })).toBeVisible();
+  await page.getByLabel('Category', { exact: true }).fill('Furniture');
+  await expect(page.getByLabel('Add item photos', { exact: true })).toBeAttached();
   await page.getByRole('checkbox', { name: /Reviewed/ }).check();
   await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
   await expect(page.locator('.room-heading p')).toHaveText('6 items · $10,120.50 documented');
-  await expect(page.locator('.room-items-heading > span')).toHaveText('6 · $10,120.50');
-  await expect(page.getByRole('button', { name: 'Needs details 4', exact: true })).toBeVisible();
+  await expect(page.locator('.room-items .badge')).toHaveCount(4);
   await page.getByRole('button', { name: 'Label', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Label photos', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Label photo 1', exact: true }).click();
@@ -317,13 +312,112 @@ test('room filters and actions use live inventory and enter the full labeling an
   await expect(page.getByRole('heading', { name: 'Label photos', exact: true })).toBeVisible();
   await expect(page.getByLabel('Item name', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Living Room', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'All 7', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Needs details 5', exact: true })).toBeVisible();
+  await expect(page.locator('.room-items .list-row')).toHaveCount(7);
+  await expect(page.locator('.room-items .badge')).toHaveCount(5);
   await expect(page.locator('.unlabeled-count')).toHaveText('2unlabeled');
   await expect(page.locator('.room-heading p')).toHaveText('7 items · $10,120.50 documented');
   await page.reload();
   await expect(page.locator('.room-items')).toContainText('Blue ottoman');
   await expect(page.locator('.room-items')).toContainText('Table lamp');
+
+  await page.getByRole('button', { name: 'Filter items', exact: true }).click();
+  await filterSheet
+    .getByRole('combobox', { name: 'Category', exact: true })
+    .selectOption('Furniture');
+  await filterSheet.getByRole('radio', { name: 'Reviewed', exact: true }).check();
+  await filterSheet.getByRole('button', { name: 'Show 1 item', exact: true }).click();
+  await expect(page.locator('.room-items .list-row')).toHaveCount(1);
+  await expect(page.locator('.room-items')).toContainText('Blue ottoman');
+  await page.getByRole('searchbox', { name: 'Search items' }).fill('no match');
+  await expect(page.getByRole('heading', { name: 'No matching items' })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search and filters' }).click();
+  await expect(page.locator('.room-items .list-row')).toHaveCount(7);
+  for (const [order, first, last] of [
+    ['Name: A to Z', 'Area rug', 'Table lamp'],
+    ['Name: Z to A', 'Table lamp', 'Area rug'],
+    ['Price: low to high', 'Blue ottoman', 'Table lamp'],
+    ['Price: high to low', 'Reviewed chair', 'Table lamp'],
+    ['Quantity: low to high', 'Area rug', 'Blue ottoman'],
+    ['Quantity: high to low', 'Blue ottoman', 'Table lamp'],
+  ]) {
+    await page.getByRole('button', { name: 'Sort items', exact: true }).click();
+    const sortSheet = page.getByRole('dialog', { name: 'Sort items', exact: true });
+    await sortSheet.getByRole('radio', { name: order, exact: true }).check();
+    await sortSheet.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(page.locator('.room-items .list-row').first()).toContainText(first);
+    await expect(page.locator('.room-items .list-row').last()).toContainText(last);
+  }
+});
+
+test('moving an item saves its draft and attachments together, and failures leave it in its original room', async ({
+  page,
+}) => {
+  await seed(page);
+  await populate(page);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open('jigsaw-homevault');
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction('state', 'readwrite');
+          const store = tx.objectStore('state');
+          const read = store.get('inventory');
+          read.onsuccess = () => {
+            const data = read.result;
+            data.items[1].receipts = [
+              {
+                id: 'receipt',
+                assetId: 'item-photo',
+                status: 'partial',
+                text: 'Synthetic receipt',
+              },
+            ];
+            store.put(data, 'inventory');
+          };
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onabort = () => {
+            db.close();
+            reject(tx.error);
+          };
+        };
+        request.onerror = () => reject(request.error);
+      }),
+  );
+  await page.goto('./#/item/item-1');
+  await page.getByLabel('Item name', { exact: true }).fill('Sofa with pending edits');
+  await page.getByLabel('Quantity', { exact: true }).fill('0');
+  await page.getByRole('button', { name: 'Move to another room', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'Move to another room', exact: true });
+  await sheet.getByRole('combobox', { name: 'Destination room' }).selectOption('bedroom');
+  await sheet.getByRole('button', { name: 'Move item', exact: true }).click();
+  await expect(sheet.getByRole('alert')).toContainText('Quantity must be a whole number');
+  expect((await snapshot(page)).items[1].roomId).toBe('living');
+  await sheet.getByRole('button', { name: 'Close move to another room' }).click();
+  await failWrites(page);
+  await page.getByLabel('Quantity', { exact: true }).fill('2');
+  await page.getByRole('button', { name: 'Move to another room', exact: true }).click();
+  await sheet.getByRole('combobox', { name: 'Destination room' }).selectOption('bedroom');
+  await sheet.getByRole('button', { name: 'Move item', exact: true }).click();
+  await expect(sheet.getByRole('alert')).toContainText('Storage is full');
+  expect((await snapshot(page)).items[1]).toMatchObject({ roomId: 'living', quantity: 1 });
+  await restoreWrites(page);
+  await sheet.getByRole('button', { name: 'Move item', exact: true }).click();
+  await expect(page).toHaveURL(/#\/room\/bedroom$/);
+  await page.reload();
+  await expect(page.locator('.room-items')).toContainText('Sofa with pending edits');
+  expect((await snapshot(page)).items[1]).toMatchObject({
+    roomId: 'bedroom',
+    name: 'Sofa with pending edits',
+    quantity: 2,
+    photos: ['item-photo'],
+    receipts: [{ id: 'receipt', assetId: 'item-photo', text: 'Synthetic receipt' }],
+  });
+  await page.goto('./#/room/living');
+  await expect(page.locator('.room-items .list-row')).toHaveCount(5);
 });
 
 test('room and property menus require confirmation, survive failed deletion, and delete only their contents', async ({

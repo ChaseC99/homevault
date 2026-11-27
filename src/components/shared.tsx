@@ -142,7 +142,15 @@ export function Photo({
     <div className={`photo ${className}`}>{contents}</div>
   );
 }
-export function PhotoViewer({ id, onClose }: { id: string; onClose: () => void }) {
+export function PhotoViewer({
+  id,
+  onClose,
+  children,
+}: {
+  id: string;
+  onClose: () => void;
+  children?: ReactNode;
+}) {
   usePhotoViewport(true);
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label="Original photo">
@@ -154,6 +162,7 @@ export function PhotoViewer({ id, onClose }: { id: string; onClose: () => void }
         </Button>
       </div>
       <Photo id={id} full className="original" />
+      {children}
       <p>Original resolution is kept on this device.</p>
     </div>
   );

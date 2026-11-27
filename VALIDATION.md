@@ -2,6 +2,28 @@
 
 The implementation is complete for the agreed PWA prototype scope. The production preview is served at `http://127.0.0.1:4173` while the local preview process is running.
 
+## Labeling completion and room heading
+
+Passed **27 unit/integration tests**, the production build, and all **21 Chromium browser scenarios**, plus strict TypeScript, formatting, and diff checks.
+
+- The final item stays editable until Save or Back succeeds. Completing labeling then replaces the empty grid with the room and shows **All photos are labeled** as a toast. There is no completion screen or extra Back to room step.
+- Adding the last photos to an existing item also returns automatically. Moving the last photos to room overviews returns with **Room overview photos saved**. Completion toasts survive navigation and do not reappear on reload.
+- A simulated failed final save keeps the editor and entered name available for retry. Coverage includes grouping all remaining photos, adding the last photo to an existing item, moving the last overview, and the single-photo receipt workflow.
+- Removed Start details and the separate count row. The live count appears beside Items, including a filtered count such as **5 of 6**.
+
+## Room, property, item, and camera controls
+
+Passed **27 unit/integration tests**, the production build, and all **20 Chromium browser scenarios**. The two affected item scenarios also passed again after the final move-sheet validation-message adjustment. Strict TypeScript checks for the application and browser tests, formatting checks, and `git diff --check` passed.
+
+- Rooms have Add Item, text search, category/review filters, and name, per-unit price, and quantity sorting in both directions. Unknown prices sort last. Browser checks combine search and filters, clear empty results, and verify each sort order.
+- The empty property cover imports an image directly and retains it after reload.
+- The category field uses tappable suggestion pills instead of a datalist, opens all suggestions when empty, supports keyboard selection, and offers a plus action for custom categories. Item photos have an adjacent add tile and a Make Cover action inside the viewer. Receipt choices explicitly distinguish taking a photo from selecting an existing image/PDF; both still run the real on-device reader.
+- Moving an item saves the current draft and moves its photo/receipt references in the same transaction. Invalid quantities and storage failures leave it in its original room and show the error in the move sheet. A property without another room offers Add room and preserves validation behavior.
+- Visually inspected 390 px room/item/filter/sort views, the 320 px property/editor views, and portrait/landscape camera controls. The bottom-right Done checkmark stays within the viewport. Screenshots use synthetic records and live in `artifacts/round2-*.png`.
+- WebKit touch selection, narrow layout, sheets, and camera layout passed with text-only fixtures. The full WebKit browser run could not complete: direct IndexedDB image-fixture writes and imports fail with `UnknownError: Error preparing Blob/File data to be stored in object store` in the bundled WebKit runtime. The existing Maps-popup check also timed out there. WebKit screenshots therefore show photo placeholders; Chromium screenshots and tests use actual synthetic image blobs. Physical iPhone Safari image storage and the native keyboard/camera still need hardware verification.
+
+The build retains its existing large-bundle warning. No deployment was performed.
+
 ## Settings update checks and version display
 
 Passed **27 unit/integration tests**, the production build at `/homevault/`, and all **19 Chromium scenarios** (18 in the full run, then the offline OCR/PDF workflow after narrowing its saved-message locator for the additional update status).

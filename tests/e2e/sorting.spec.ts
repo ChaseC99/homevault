@@ -75,6 +75,54 @@ test('labeling saves a draft, permits blanks, and ignores duplicate taps', async
   await expect(grid(page)).toBeVisible();
 });
 
+test('finishing the last photos returns to the room with a toast only after the item saves', async ({
+  page,
+}) => {
+  await setup(page);
+  await select(page, [1, 2, 3, 4]);
+  await page.getByRole('button', { name: 'Label 4 photos as one item', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Label this item', exact: true })).toBeVisible();
+  await expect(page.locator('.editable-photo')).toHaveCount(4);
+  await failWrites(page);
+  await page.getByLabel('Item name', { exact: true }).fill('Sofa');
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Storage is full');
+  await expect(page.getByLabel('Item name', { exact: true })).toHaveValue('Sofa');
+  await restoreWrites(page);
+  await page.getByRole('button', { name: 'Dismiss error', exact: true }).click();
+  await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'All photos are labeled' }),
+  ).toBeVisible();
+  await expect(page.locator('.room-items-heading .room-item-count')).toHaveText('1');
+  expect((await snapshot(page)).items[0]).toMatchObject({ name: 'Sofa' });
+  await page.reload();
+  await expect(page.getByText('All photos are labeled', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Add Item', exact: true }).click();
+  await importPhotos(page, ['photo-1.jpg']);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await select(page, [1]);
+  await page.getByRole('combobox', { name: 'Add photos to' }).selectOption({ label: 'Sofa' });
+  await page.getByRole('button', { name: 'Add to item', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'All photos are labeled' }),
+  ).toBeVisible();
+  expect((await snapshot(page)).items[0].photos).toHaveLength(5);
+
+  await page.getByRole('button', { name: 'Add Item', exact: true }).click();
+  await importPhotos(page, ['photo-2.jpg']);
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await select(page, [1]);
+  await page.getByRole('button', { name: 'These are room overview photos', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Room overview photos saved' }),
+  ).toBeVisible();
+});
+
 test('failed creation and saves retain photos and draft work; invalid input blocks leaving until corrected', async ({
   page,
 }) => {
@@ -191,7 +239,7 @@ test('grid adds photos to an existing item without opening it and preserves over
   expect((await snapshot(page)).rooms[0].unsortedPhotos).toHaveLength(3);
 });
 
-test('ordinary item pages are immediately editable and keep photo import, room photo selection and organizing', async ({
+test('item pages support category suggestions, photo import, room photo selection and cover selection', async ({
   page,
 }) => {
   await setup(page);
@@ -207,7 +255,14 @@ test('ordinary item pages are immediately editable and keep photo import, room p
   await expect(page).toHaveURL(/#\/item\//);
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Item name', { exact: true })).toBeEditable();
+  await page.getByLabel('Category', { exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Furniture', exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'Jewelry', exact: true })).toBeVisible();
+  await page.getByLabel('Category', { exact: true }).press('ArrowDown');
+  await page.getByLabel('Category', { exact: true }).press('Enter');
+  await expect(page.getByLabel('Category', { exact: true })).toHaveValue('Furniture');
   await page.getByLabel('Category', { exact: true }).fill('Collectibles');
+  await page.getByRole('option', { name: 'Add “Collectibles”', exact: true }).click();
   const initial = (await snapshot(page)).items[0].photos;
   await page.getByRole('button', { name: 'Remove item photo 1', exact: true }).click();
   await expect(page.locator('.editable-photo')).toHaveCount(1);
@@ -221,21 +276,28 @@ test('ordinary item pages are immediately editable and keep photo import, room p
   await page.reload();
   await expect(page.getByLabel('Brand', { exact: true })).toHaveValue('New brand');
   await expect(page.getByLabel('Category', { exact: true })).toHaveValue('Collectibles');
-  await expect(page.locator('#item-categories option[value="Collectibles"]')).toHaveCount(1);
+  await page.getByLabel('Category', { exact: true }).click();
+  await expect(page.getByRole('option', { name: 'Collectibles', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.locator('.editable-photo')).toHaveCount(1);
   await page.getByLabel('Add item photos', { exact: true }).setInputFiles(fixture('photo-4.jpg'));
   await expect(page.locator('.editable-photo')).toHaveCount(2);
   const photos = (await snapshot(page)).items[0].photos;
-  await page.getByText('Organize photos', { exact: true }).click();
-  await page.getByRole('button', { name: 'Make first', exact: true }).nth(1).click();
+  await page.getByRole('button', { name: 'Open item photo 2', exact: true }).click();
+  await page.getByRole('button', { name: 'Make Cover', exact: true }).click();
   expect((await snapshot(page)).items[0].photos[0]).toBe(photos[1]);
-  await page.getByRole('button', { name: 'Return to grid', exact: true }).first().click();
-  await expect(page.locator('.editable-photo')).toHaveCount(1);
-  expect((await snapshot(page)).rooms[0].unsortedPhotos).toContain(photos[1]);
   await page.getByRole('button', { name: 'Save & return to room', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
   expect((await snapshot(page)).items[0].brand).toBe('New brand');
-  await page.getByRole('button', { name: /Lamp 1 photo/ }).click();
+  await page.getByRole('button', { name: /Lamp 2 photos/ }).click();
+  await page.getByLabel('Quantity', { exact: true }).fill('0');
+  await page.getByRole('button', { name: 'Move to another room', exact: true }).click();
+  const moveSheet = page.getByRole('dialog', { name: 'Move to another room', exact: true });
+  await moveSheet.getByRole('button', { name: 'Add room', exact: true }).click();
+  await expect(moveSheet.getByRole('alert')).toContainText('Quantity must be a whole number');
+  await moveSheet.getByRole('button', { name: 'Close move to another room' }).click();
+  await page.getByRole('button', { name: 'Dismiss error', exact: true }).click();
+  await page.getByLabel('Quantity', { exact: true }).fill('1');
   await page.getByRole('button', { name: 'Living Room', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Living Room', exact: true })).toBeVisible();
 });

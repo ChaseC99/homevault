@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type Inventory, type Item, type Room, groupPhotos, title } from '../lib/model';
 import { mutate } from '../lib/db';
-import { Back, Button, Photo, Check, Empty, go } from './shared';
+import { Back, Button, Photo, Check, go } from './shared';
 import { Details } from './Details';
 import type { Run } from './Setup';
 
@@ -37,11 +37,13 @@ export function Sort({
   room,
   run,
   editingItemId,
+  onComplete,
 }: {
   data: Inventory;
   room: Room;
   run: Run;
   editingItemId?: string;
+  onComplete: (message: string) => void;
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -50,13 +52,24 @@ export function Sort({
   const [busy, setBusy] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const locked = useRef(false);
+  const openingItem = useRef(false);
+  const completionMessage = useRef('All photos are labeled');
   const items = data.items.filter((item) => item.roomId === room.id);
+  const editing = items.find((item) => item.id === editingItemId);
   const selectedPhotos = room.unsortedPhotos.filter((photo) => selected.includes(photo));
   const edit = (itemId: string) => go(`/sort/${room.id}?item=${itemId}`);
+  useEffect(() => {
+    if (editing) openingItem.current = false;
+    else if (!busy && !openingItem.current && !room.unsortedPhotos.length)
+      onComplete(completionMessage.current);
+  }, [editing, busy, room.unsortedPhotos.length, onComplete]);
 
   async function labelPhotos(photos: string[], destination?: string) {
     if (locked.current || !photos.length) return;
     locked.current = true;
+    // The last photo leaves the grid before the editor route has finished opening.
+    openingItem.current = !destination;
+    completionMessage.current = 'All photos are labeled';
     setBusy(true);
     let grouping: Grouping | undefined;
     const ok = await run(async () => {
@@ -86,7 +99,7 @@ export function Sort({
       setExisting('');
       setSelecting(false);
       if (!destination) edit(grouping.itemId);
-    }
+    } else openingItem.current = false;
     locked.current = false;
     setBusy(false);
   }
@@ -142,6 +155,7 @@ export function Sort({
       'Moved to room overviews',
     );
     if (ok) {
+      completionMessage.current = 'Room overview photos saved';
       setSelected([]);
       setSelecting(false);
     }
@@ -149,8 +163,8 @@ export function Sort({
     setBusy(false);
   }
 
-  const editing = items.find((item) => item.id === editingItemId);
   if (editing) return <Details key={editing.id} data={data} item={editing} run={run} labeling />;
+  if (!room.unsortedPhotos.length) return null;
 
   return (
     <>
@@ -189,39 +203,29 @@ export function Sort({
           overviews.
         </p>
       )}
-      {room.unsortedPhotos.length ? (
-        <div className="sort-grid">
-          {room.unsortedPhotos.map((photo, index) => (
-            <button
-              key={photo}
-              className={`sort-photo ${selected.includes(photo) ? 'selected' : ''}`}
-              aria-label={`${selecting ? 'Select' : 'Label'} photo ${index + 1}`}
-              aria-pressed={selecting ? selected.includes(photo) : undefined}
-              disabled={busy}
-              onClick={() =>
-                selecting
-                  ? setSelected((s) =>
-                      s.includes(photo) ? s.filter((id) => id !== photo) : [...s, photo],
-                    )
-                  : void labelPhotos([photo])
-              }
-            >
-              <Photo id={photo} />
-              <span className="selection-indicator">
-                {selected.includes(photo) ? <Check size={18} /> : index + 1}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <Empty
-          icon={<Check size={34} />}
-          title="Every photo has an item."
-          action={<Button onClick={() => go(`/room/${room.id}`)}>Back to room</Button>}
-        >
-          Tap an item below to add or update its details. Unknown details can stay blank.
-        </Empty>
-      )}
+      <div className="sort-grid">
+        {room.unsortedPhotos.map((photo, index) => (
+          <button
+            key={photo}
+            className={`sort-photo ${selected.includes(photo) ? 'selected' : ''}`}
+            aria-label={`${selecting ? 'Select' : 'Label'} photo ${index + 1}`}
+            aria-pressed={selecting ? selected.includes(photo) : undefined}
+            disabled={busy}
+            onClick={() =>
+              selecting
+                ? setSelected((s) =>
+                    s.includes(photo) ? s.filter((id) => id !== photo) : [...s, photo],
+                  )
+                : void labelPhotos([photo])
+            }
+          >
+            <Photo id={photo} />
+            <span className="selection-indicator">
+              {selected.includes(photo) ? <Check size={18} /> : index + 1}
+            </span>
+          </button>
+        ))}
+      </div>
       {!!items.length && (
         <section className="grouped-section" aria-labelledby="items-heading">
           <div className="section-head">

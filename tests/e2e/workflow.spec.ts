@@ -27,8 +27,11 @@ async function makeItem(page: Page, photos: number[]) {
       .getByRole('button', { name: `Label ${photos.length} photos as one item`, exact: true })
       .click();
   }
-  await page.getByRole('button', { name: 'Save & return to photos', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Label photos', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^Save & return to (photos|room)$/ }).click();
+  const remaining = (await snapshot(page)).rooms[0].unsortedPhotos.length;
+  await expect(
+    page.getByRole('heading', { name: remaining ? 'Label photos' : 'Living Room', exact: true }),
+  ).toBeVisible();
 }
 async function backToRoom(page: Page) {
   await page
@@ -106,7 +109,7 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
     .getByLabel('Notes / additional information', { exact: true })
     .fill('Pair of walnut tables. Small mark on left leg.');
   await page
-    .getByLabel('Attach image or PDF', { exact: true })
+    .getByLabel('Choose image or PDF', { exact: true })
     .setInputFiles(fixture('receipt.png'));
   await expect(page.getByText('Receipt total: $760.00', { exact: true })).toBeVisible({
     timeout: 90000,
@@ -125,7 +128,7 @@ test('complete offline workflow, real OCR, corrected unit price and complete PDF
     '380.00',
   );
   await page
-    .getByLabel('Attach image or PDF', { exact: true })
+    .getByLabel('Choose image or PDF', { exact: true })
     .setInputFiles(fixture('receipt-two-pages.pdf'));
   await expect(page.getByText('Read · check details', { exact: true })).toHaveCount(2, {
     timeout: 90000,
@@ -203,9 +206,11 @@ test('unreadable receipts retain originals and leave unknown fields blank', asyn
   await importPhotos(page, ['photo-1.jpg']);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await makeItem(page, [1]);
-  await backToRoom(page);
+  await expect(
+    page.getByRole('status').filter({ hasText: 'All photos are labeled' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: /Item 1 1 photo/ }).click();
-  await page.getByLabel('Attach image or PDF', { exact: true }).setInputFiles(fixture('blank.png'));
+  await page.getByLabel('Choose image or PDF', { exact: true }).setInputFiles(fixture('blank.png'));
   await expect(page.getByText('Needs manual entry', { exact: true })).toBeVisible({
     timeout: 90000,
   });

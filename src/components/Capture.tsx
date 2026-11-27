@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, MoreHorizontal, X } from 'lucide-react';
+import { ArrowRight, Check, MoreHorizontal, X } from 'lucide-react';
 import { type Inventory, type Room } from '../lib/model';
 import { mutate, storageInfo } from '../lib/db';
 import { imageBitmap, prepareAsset } from '../lib/media';
@@ -380,13 +380,7 @@ export function Capture({ room, overview, run }: { room: Room; overview: boolean
   return (
     <div className="camera-screen">
       <div className="camera-top">
-        <Button
-          kind="ghost"
-          disabled={busy}
-          onClick={() => go(overview || !photos.length ? `/room/${room.id}` : `/sort/${room.id}`)}
-        >
-          Done
-        </Button>
+        <span aria-hidden="true" />
         <div className="camera-title">
           <h1 title={room.name}>{room.name}</h1>
           {overview && <span>Room overview</span>}
@@ -509,7 +503,14 @@ export function Capture({ room, overview, run }: { room: Room; overview: boolean
           >
             <span />
           </button>
-          <span aria-hidden="true" />
+          <button
+            className="capture-done"
+            disabled={busy}
+            onClick={() => go(overview || !photos.length ? `/room/${room.id}` : `/sort/${room.id}`)}
+          >
+            <Check size={34} strokeWidth={2.6} aria-hidden="true" />
+            <span>Done</span>
+          </button>
         </div>
       </div>
       <input

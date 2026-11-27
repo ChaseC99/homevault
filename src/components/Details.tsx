@@ -14,8 +14,10 @@ import { guardNavigation } from '../lib/navigation';
 import { prepareAsset } from '../lib/media';
 import { readReceipt, readSerialNumber } from '../lib/ocr';
 import { Back, Button, Field, FilePicker, Photo, PhotoViewer, Badge, go } from './shared';
-import { ScanLine, X } from 'lucide-react';
+import { ArrowRightLeft, Camera, FileUp, Plus, ScanLine, X } from 'lucide-react';
 import { ReceiptPreview } from './ReceiptPreview';
+import { CategoryPicker } from './CategoryPicker';
+import { Sheet } from './Sheet';
 import type { Run } from './Setup';
 type Form = Omit<Item, 'unitPriceCents'> & { price: string };
 const toForm = (item: Item): Form => ({
@@ -45,6 +47,9 @@ export function Details({
   const [serialProgress, setSerialProgress] = useState('');
   const [addingPhotos, setAddingPhotos] = useState(false);
   const [additionalPhotos, setAdditionalPhotos] = useState<string[]>([]);
+  const [moving, setMoving] = useState(false);
+  const [destination, setDestination] = useState('');
+  const [moveError, setMoveError] = useState('');
   const locked = useRef(false);
   const writes = useRef<Promise<void>>(Promise.resolve());
   const categories = Array.from(
@@ -65,6 +70,9 @@ export function Details({
     timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   current.current = form;
   const room = data.rooms.find((r) => r.id === item.roomId)!;
+  const otherRooms = data.rooms
+    .filter((r) => r.propertyId === room.propertyId && r.id !== room.id)
+    .sort((a, b) => a.order - b.order);
   const queue = useRef(
     data.items.filter((i) => i.roomId === item.roomId && !i.reviewed).map((i) => i.id),
   );
@@ -72,6 +80,7 @@ export function Details({
     .slice(queue.current.indexOf(item.id) + 1)
     .filter((key) => data.items.some((i) => i.id === key && !i.reviewed));
   const returnTo = labeling ? `/sort/${room.id}` : `/room/${room.id}`;
+  const hasPhotosToLabel = labeling && room.unsortedPhotos.length > 0;
   function update(key: keyof Form, value: string | number | boolean) {
     dirty.current = true;
     const next = { ...current.current, reviewed: false, [key]: value };
@@ -79,7 +88,7 @@ export function Details({
     setForm(next);
     setSaveStatus('Unsaved changes');
   }
-  async function persist(reviewed?: boolean) {
+  async function persist(reviewed?: boolean, destinationRoomId?: string) {
     const { price, ...values } = current.current;
     const snapshot = current.current;
     const next = {
@@ -97,6 +106,19 @@ export function Details({
           const i = d.items.find((i) => i.id === item.id);
           if (!i) throw Error('Item no longer exists.');
           Object.assign(i, { ...next, photos: i.photos, receipts: i.receipts });
+          if (destinationRoomId) {
+            const sourceRoom = d.rooms.find((r) => r.id === i.roomId);
+            const destinationRoom = d.rooms.find((r) => r.id === destinationRoomId);
+            if (!destinationRoom || destinationRoom.propertyId !== sourceRoom?.propertyId)
+              throw Error('That room is no longer available. Choose another room.');
+            const roomItems = d.items.filter(
+              (other) => other.roomId === destinationRoomId && other.id !== i.id,
+            );
+            i.number =
+              roomItems.reduce((max, other, index) => Math.max(max, other.number ?? index + 1), 0) +
+              1;
+            i.roomId = destinationRoomId;
+          }
         });
       });
     writes.current = write;
@@ -136,12 +158,22 @@ export function Details({
       }),
     [],
   );
-  async function saveChanges(reviewed?: boolean) {
+  async function saveChanges(reviewed?: boolean, destinationRoomId?: string) {
     if (locked.current) return false;
     locked.current = true;
     clearTimeout(timer.current);
     setBusy(true);
-    const ok = await run(() => persist(reviewed), 'Item saved');
+    const ok = await run(
+      async () => {
+        try {
+          await persist(reviewed, destinationRoomId);
+        } catch (error) {
+          if (moving || destinationRoomId) setMoveError(errorMessage(error));
+          throw error;
+        }
+      },
+      destinationRoomId ? 'Item moved' : 'Item saved',
+    );
     locked.current = false;
     setBusy(false);
     return ok;
@@ -204,11 +236,21 @@ export function Details({
   return (
     <>
       <Back to={returnTo} disabled={busy} onClick={() => void finish()}>
-        {labeling ? 'Photo grid' : room.name}
+        {hasPhotosToLabel ? 'Photo grid' : room.name}
       </Back>
       <div className="row">
         <Badge warn={!form.reviewed}>{form.reviewed ? 'Reviewed' : 'Draft'}</Badge>
-        <span className="subtle">{room.name}</span>
+        <Button
+          kind="text"
+          disabled={busy}
+          onClick={() => {
+            setDestination('');
+            setMoveError('');
+            setMoving(true);
+          }}
+        >
+          <ArrowRightLeft size={16} /> Move to another room
+        </Button>
         {session && (
           <Button kind="text" disabled={busy} onClick={() => finish(false, true)}>
             Skip
@@ -216,19 +258,17 @@ export function Details({
         )}
       </div>
       <header>
-        {!labeling && (
-          <span className="eyebrow">
-            {session ? `${pending.length + 1} ITEMS LEFT IN THIS SESSION` : 'ITEM DETAILS'}
-          </span>
+        {session && !labeling && (
+          <span className="eyebrow">{pending.length + 1} ITEMS LEFT IN THIS SESSION</span>
         )}
         <h1>{labeling ? 'Label this item' : title(item)}</h1>
-        <p>Record what you know. Unknown details can stay blank.</p>
       </header>
       <fieldset className="editor-fields" disabled={busy}>
         <div className="photo-strip editable-photos">
           {item.photos.map((p, n) => (
             <div className="editable-photo" key={p}>
               <Photo id={p} alt={`Open item photo ${n + 1}`} onClick={() => setViewer(p)} />
+              {n === 0 && <span className="cover-badge">Cover</span>}
               <button
                 className="remove-photo"
                 aria-label={`Remove item photo ${n + 1}`}
@@ -247,6 +287,24 @@ export function Details({
               </button>
             </div>
           ))}
+          <FilePicker
+            label="Add item photos"
+            icon={<Plus size={25} />}
+            iconOnly
+            multiple
+            disabled={busy}
+            onFiles={(files) =>
+              work(async () => {
+                for (const file of files) {
+                  const asset = await prepareAsset(file, file.name);
+                  await mutate(
+                    (d) => d.items.find((i) => i.id === item.id)!.photos.push(asset.id),
+                    [asset],
+                  );
+                }
+              })
+            }
+          />
         </div>
         {removed && (
           <div className="notice" role="status">
@@ -271,45 +329,19 @@ export function Details({
         )}
         <section className="card form-card">
           {fields([['name', 'Item name']])}
-          <Field label="Category" hint="Choose a suggestion or type your own category.">
-            <input
-              aria-label="Category"
-              list="item-categories"
-              value={form.category}
-              maxLength={180}
-              onChange={(e) => update('category', e.target.value)}
-              autoComplete="off"
-            />
-            <datalist id="item-categories">
-              {categories.map((category) => (
-                <option key={category} value={category} />
-              ))}
-            </datalist>
-          </Field>
-        </section>
-        <div className="button-row">
-          <FilePicker
-            label="Add item photos"
-            multiple
-            disabled={busy}
-            onFiles={(files) =>
-              work(async () => {
-                for (const file of files) {
-                  const asset = await prepareAsset(file, file.name);
-                  await mutate(
-                    (d) => d.items.find((i) => i.id === item.id)!.photos.push(asset.id),
-                    [asset],
-                  );
-                }
-              })
-            }
+          <CategoryPicker
+            value={form.category}
+            categories={categories}
+            onChange={(value) => update('category', value)}
           />
-          {!!room.unsortedPhotos.length && (
+        </section>
+        {!!room.unsortedPhotos.length && (
+          <div className="button-row">
             <Button kind="text" disabled={busy} onClick={() => setAddingPhotos(!addingPhotos)}>
               {addingPhotos ? 'Close room photos' : 'Choose additional room photos'}
             </Button>
-          )}
-        </div>
+          </div>
+        )}
         {addingPhotos && !!room.unsortedPhotos.length && (
           <section className="card form-card" aria-label="Additional photos of this item">
             <h2>More photos of this item</h2>
@@ -355,56 +387,6 @@ export function Details({
             </Button>
           </section>
         )}
-        {!!item.photos.length && (
-          <details className="card form-card photo-options">
-            <summary>Organize photos</summary>
-            <p>
-              Choose the first photo or return a photo to the labeling grid. Details and receipts
-              stay with this item.
-            </p>
-            {item.photos.map((photo, index) => (
-              <div className="row" key={photo}>
-                <Photo id={photo} />
-                <span>Photo {index + 1}</span>
-                <Button
-                  kind="text"
-                  disabled={busy || index === 0}
-                  onClick={() =>
-                    void work(
-                      () =>
-                        mutate((d) => {
-                          const target = d.items.find((i) => i.id === item.id)!;
-                          target.photos = [photo, ...target.photos.filter((id) => id !== photo)];
-                        }),
-                      'First photo changed',
-                    )
-                  }
-                >
-                  Make first
-                </Button>
-                <Button
-                  kind="text"
-                  disabled={busy}
-                  onClick={() =>
-                    void work(
-                      () =>
-                        mutate((d) => {
-                          const target = d.items.find((i) => i.id === item.id)!;
-                          target.photos = target.photos.filter((id) => id !== photo);
-                          const targetRoom = d.rooms.find((r) => r.id === room.id)!;
-                          if (!targetRoom.unsortedPhotos.includes(photo))
-                            targetRoom.unsortedPhotos.push(photo);
-                        }),
-                      'Photo returned to labeling grid',
-                    )
-                  }
-                >
-                  Return to grid
-                </Button>
-              </div>
-            ))}
-          </details>
-        )}
         <div className="stack">
           <section className="card form-card">
             <div className="row">
@@ -412,13 +394,20 @@ export function Details({
               <Badge>{item.receipts.length} attached</Badge>
             </div>
             <p>
-              Read price, date and store on this device. Check every suggestion; receipts can
-              contain several purchases.
+              Take a new photo or choose a saved image or PDF. Both read price, date and store on
+              this device. Check the suggestions before using them.
             </p>
             <div className="button-row">
-              <FilePicker label="Scan receipt" capture disabled={busy} onFiles={attach} />
               <FilePicker
-                label="Attach image or PDF"
+                label="Take receipt photo"
+                icon={<Camera size={18} />}
+                capture
+                disabled={busy}
+                onFiles={attach}
+              />
+              <FilePicker
+                label="Choose image or PDF"
+                icon={<FileUp size={18} />}
                 accept="image/*,application/pdf,.pdf"
                 multiple
                 disabled={busy}
@@ -526,7 +515,7 @@ export function Details({
                 <input
                   inputMode="decimal"
                   value={form.price}
-                  placeholder="Unknown"
+                  placeholder="0.00"
                   onChange={(e) => update('price', e.target.value)}
                 />
               </Field>
@@ -657,7 +646,7 @@ export function Details({
         <Button disabled={busy} onClick={() => finish(session ? true : undefined, session)}>
           {busy
             ? 'Saving…'
-            : labeling
+            : hasPhotosToLabel
               ? 'Save & return to photos'
               : session
                 ? 'Mark reviewed & next item'
@@ -669,7 +658,82 @@ export function Details({
           </Button>
         )}
       </div>
-      {viewer && <PhotoViewer id={viewer} onClose={() => setViewer('')} />}
+      {moving && (
+        <Sheet
+          title="Move to another room"
+          onClose={() => {
+            if (!busy) setMoving(false);
+          }}
+        >
+          <p>
+            Move {title(item)} from {room.name}. Its photos, receipts and details move with it.
+          </p>
+          {moveError && <p role="alert">{moveError}</p>}
+          {otherRooms.length ? (
+            <>
+              <label className="field">
+                Destination room
+                <select
+                  disabled={busy}
+                  value={destination}
+                  onChange={(event) => setDestination(event.target.value)}
+                >
+                  <option value="">Choose a room</option>
+                  {otherRooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                disabled={busy || !destination}
+                onClick={async () => {
+                  setMoveError('');
+                  if (await saveChanges(undefined, destination)) {
+                    setMoving(false);
+                    go(`/room/${destination}`);
+                  }
+                }}
+              >
+                {busy ? 'Moving…' : 'Move item'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <p>Add another room to this property first.</p>
+              <Button
+                disabled={busy}
+                onClick={async () => {
+                  if (await saveChanges()) go(`/rooms/${room.propertyId}`);
+                }}
+              >
+                Add room
+              </Button>
+            </>
+          )}
+        </Sheet>
+      )}
+      {viewer && (
+        <PhotoViewer id={viewer} onClose={() => setViewer('')}>
+          <Button
+            disabled={busy || viewer === item.photos[0]}
+            onClick={async () => {
+              const ok = await work(
+                () =>
+                  mutate((d) => {
+                    const target = d.items.find((i) => i.id === item.id)!;
+                    target.photos = [viewer, ...target.photos.filter((photo) => photo !== viewer)];
+                  }),
+                'Cover photo changed',
+              );
+              if (ok) setViewer('');
+            }}
+          >
+            {viewer === item.photos[0] ? 'Current cover' : 'Make Cover'}
+          </Button>
+        </PhotoViewer>
+      )}
     </>
   );
 }
